@@ -1,0 +1,244 @@
+---
+title: "VRT Examples USGS"
+author: "Mike Johnson"
+date: "4/19/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(terra)
+library(vapour)
+library(kableExtra)
+```
+
+3DEP is the national elevation dataset in the US. It provides a wealth of information and is critcal to many environmental applications.  This document trys to outline the advantages of the 3DEP VRT files.
+
+# Context: *Fort Collins, Colorado*
+
+```{r, echo = FALSE, message = FALSE, warning = FALSE}
+library(rayshader) 
+library(rayvista)
+
+AOI = AOI::aoi_get("Fort Collins")
+url = "/vsicurl/https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1/TIFF/USGS_Seamless_DEM_1.vrt"
+elev = rast(url)
+
+data = crop(elev, project(vect(AOI), crs(elev)))
+
+loc = AOI::geocode("Warren Lake, Fort Collins")
+
+foco <- plot_3d_vista(dem = data)
+
+render_label(heightmap= foco, text='Warren Lake', lat = loc$lat,
+             long=loc$lon, extent = attr(raster::raster(data), 'extent'),
+             altitude=2400,
+             clear_previous = T, zscale = 2, linecolor = "red")
+
+render_snapshot(clear=TRUE)
+```
+
+
+# 1. Flexabilty 
+
+The VRT resources are not only easy to use, but also provide extreme flexibility in meeting applications goals. The range in possible ways to "use" the data span the gambit.
+
+
+Here we provide three examples that increase in complexity and utility. The key is that on the "easy" side, users can very simply get the data they want from the best available 3DEP treating a URL as if it was a local file in any programming language! On the more complex side users can control the resolution, projection, extent, and resampling of the data with minimal effort. 
+
+```{r, fig.align='center', out.width="40%", echo = FALSE}
+knitr::include_graphics("img/images.jpeg")
+```
+
+## `r text_spec("Simple Use", color = "green")`
+
+The most simple way to access this data is to define a resource (URL) and "open" it. Below we see that entire 3DEP product for res-1 is accessible, _but_, we haven't pulled any data yet to process. This will allow us to work on the spatial metadata without yet touching the data.
+ 
+```{r} 
+url = "/vsicurl/https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/1/TIFF/USGS_Seamless_DEM_1.vrt"
+(elev = rast(url))
+```
+
+Here we see the complete 1-arcsec 3DEP product has a resolution of 0.0002778*0.0002778 degrees, almost 420,000,00,000 values (!) and is natively in geographic CRS (4269). The nations elevation ranges from -8m to 3647m.
+
+Say we want just _some_ of that data for an area - like Fort Collins `r emo::ji("smile")`. As long as we know the area, we can extract just that component very quickly:
+
+```{r}
+AOI = AOI::aoi_get("Fort Collins")
+
+ss = system.time({
+  #Project the AOI to the CRS of 3DEP, and extract the values!
+  (data = crop(elev, project(vect(AOI), crs(elev))))
+})
+
+```
+
+```{r, echo = FALSE}
+plot(data, main = paste0(ncell(data), " cells in ", round(ss[3], 2), " seconds!"))
+```
+
+With this VRT we are getting a transfer speed of ~ `r ncell(data)/ss[3]` values/second and have an object that is ready to work with. 
+
+Equally improtant, this is the identical process a user would employ if they had to download the enture seamless product to disk (e.g. NLCD!). In other words the "cloud" aspects of the workflow are abstracted away without requiring the USGS to create a service, or for a single seamless file to ever be needed.
+
+### Programatic use
+
+The process of open/align/extract by area are so common that wrapping it up in a programmatic workflow "makes sense". We did so over in `opendap.catalog`.
+
+```{r, warning=FALSE, message=FALSE}
+library(opendap.catalog)
+(data = dap(url, AOI = AOI))
+```
+
+The cool thing about "programmatic" access is that any VRT can be passed to the same signiture to get local data from remote, large datasets. Here, the same call can be used to instead get the 1/3 arc second 3DEP product.
+  
+```{r}
+(dap(URL = "/vsicurl/https://prd-tnm.s3.amazonaws.com/StagedProducts/Elevation/13/TIFF/USGS_Seamless_DEM_13.vrt", AOI = AOI))
+```
+
+Same extent but more data `r emo::ji("artist")`
+  
+## `r text_spec("Target Grids", color = "orange")`
+
+The flexibility that comes with VRTs provides the opportunity to read data through a "warp specification". Essentially it allows a user to provide 'extent', 'dimension', and 'projection' properties for the desired output
+
+```{r}
+cat = search('polaris sand mean 0_5')
+cat$URL
+```
+
+```{r}
+(sand = dap(catolog = cat, AOI = AOI))
+```
+
+Same extent
+
+```{r}
+target = sand[[1]]
+
+v <- vapour_warp_raster_dbl(url, 
+                            resample  = "bilinear", 
+                            extent = as.vector(ext(target)), 
+                            dimension = dim(target)[1:2], 
+                            projection = crs(target))
+
+r = rast(matrix(v, dim(target)[1], byrow = T), extent = ext(target), crs  = crs(target), names = "elev")
+
+(d = c(sand, r))
+
+plot(d)
+```
+
+
+```{r}
+df <- as.data.frame(d, na.rm = FALSE)  
+df[is.na(df)] <- 0
+
+cluster <- d[[1]] 
+names(cluster)  = "class"
+cluster[] <-  kmeans(df, 4)$cluster
+
+plot(cluster, main = "Sand/Elevation Interaction (4 levels)")
+```
+
+### `r text_spec("Custom Grids", color = "red")`
+
+Here is something that is (personally) a _really_ powerful utility.
+
+- Just give me the data, and then let me use it _without_ any enforced constraints. Here is a simple function that allows us to use the VRT in _any_ data model we want.
+
+```{r}
+
+get_dem <- function(x,  
+                    url = url,
+                    width = 10000, 
+                    dimension = 100,
+                    resample  = "bilinear"){
+  
+  # Assign dimension / extent   
+  dimension <- rep(dimension, length.out = 2L)
+
+  # Transform unit grid to "our" grid
+  extent = c(-1, 1, -1, 1) * rep(width, each = 4L)/2
+  
+  # Custom projected CRS with  "x" location as origin
+  projection = sprintf("+proj=laea +lon_0=%f +lat_0=%f", x[1], x[2])
+  
+  # stream data as a vector
+  v <- vapour_warp_raster_dbl(url, 
+                              resample   = resample, 
+                              extent     = extent, 
+                              dimension  = dimension, 
+                              projection = projection)
+
+  # Mold into spatial object and return
+  rast(matrix(v, dimension[1], byrow = T), 
+       extent = extent, crs = projection)
+
+}
+```
+
+## Examples
+
+```{r}
+loc = AOI::geocode("Warren Lake, Fort Collins")
+x  = c(loc$lon, loc$lat)
+```
+
+### Custom resolution/extent
+
+```{r}
+loc = AOI::geocode("Warren Lake, Fort Collins")
+x  = c(loc$lon, loc$lat)
+
+# 10000 / 1000 = 10m resolution resampled from the 10m 3DEP
+(r = get_dem(x, url,  10000, 1000))
+
+
+# 10000 / 2000 = 5m resolution resampled from the 10m 3DEP
+(r = get_dem(x, url, 10000, 2000) )
+
+plot(r)
+
+# 1000 / 10 = 1000m resolution resampled from the 10m 3DEP
+(r = get_dem(x, url, 10000, 10) )
+```
+ 
+### Custom Resample
+
+```{r}
+# 1000 / 100 = 1000m resolution resampled from the 10m 3DEP via min resampling
+(r_min = get_dem(x, url, 10000, 100, resample = "min") )
+
+# 1000 / 100 = 1000m resolution resampled from the 10m 3DEP via max resampling
+(r_max = get_dem(x, url, 10000, 100, resample = "max") )
+
+# What is the range in each 100m cell?
+plot(r_max - r_min)
+```
+
+
+
+
+2. Ease of maintenance - so long as a the s3 paths do not change, and the file structure (extent, resolution of a file) don't change, updates to individual tiles will be reflected in all new requests immediately. If, instead a foundational change was made (2 degree tiles, a new domain, a new tile, ect) a new VRT in the same path would allow a seamless process from the user end.
+
+# Concluding remarks per NOAA
+
+
+- Doesnt matter where it lives!
+ 
+```{r}
+
+elev = rast('/Users/mjohnson/Downloads/USGS_Seamless_DEM_1.vrt')
+(data = crop(elev, project(vect(AOI), crs(elev))))
+
+plot(data)
+```
+
+Some groups may not want to hit a remote VRT many times and instead would prefer having the data local, or, in their own cloud compute regions/service. 
+
+The USGS has elected Amazon s3 as a storage solution for the tiled 3DEP data. For those seeking to "mirror" that service [AWS s3 replicate](https://docs.aws.amazon.com/AmazonS3/latest/userguide/replication.html) would prove useful if the goal is to reduce latency and egress costs.
+
+If a user wants all the data locally, then a set of HTTP calls for each would suffice - but - would be harder to keep up to date a synced with the "latest and greatest".
+
+In *both* cases, a new VRT over the choice tile set would need to be generated.
