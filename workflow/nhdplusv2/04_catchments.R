@@ -1,4 +1,4 @@
-source('workflow/config.R')
+source('workflow/nhdplusv2/config.R')
 
 files  = list.files(catchments_dir, full.names = TRUE, pattern = ".gpkg$")
 out_geojson = gsub('gpkg', 'geojson', glue('{cleaned_dir}{gsub("NHDPlus", "cleaned_", basename(files))}'))
@@ -14,49 +14,25 @@ unlink(out_geojson); unlink(out_tmp); unlink(out_gpkg)
 for(i in 1:length(files)){
 
   if(!file.exists(out_gpkg[i])){
-    catchments        = read_sf(files[i])
-    names(catchments) = tolower(names(catchments))
-
-    catchments = catchments %>%
-      st_transform(4326) %>%
-      clean_geometry(sys = TRUE, 'featureid', keep = NULL) %>%
-      st_make_valid() %>%
-      mutate(areasqkm = add_areasqkm(.)) %>%
-      st_transform(5070) %>% 
-      fix_mp_issues(
-        flowlines = st_transform(read_sf(flowpath_files[i]), 5070),
-        "featureid"
-       ) %>%
-         st_transform(4326)
     
+     catchments        = read_sf(files[i])
     
-    if(all(st_geometry_type(catchments) == "POLYGON") & all(st_is_valid(catchments))){
-      
-      unlink(out_geojson[i])
-      write_sf(catchments, out_geojson[i])
-      
-      system(paste0('node  --max-old-space-size=16000 `which mapshaper` ',
-                    out_geojson[i], ' -simplify ',
-                    num, '% keep-shapes -o ',
-                    out_tmp[i]))
-      
-      catchments = read_sf(out_tmp[i])
-      
-      if(all(st_geometry_type(catchments) == "POLYGON") & all(st_is_valid(catchments))){
-        write_sf(catchments, out_gpkg[i])
-      } else {
-        stop("Invalids Created in Step 2")
-      }
-    } else {
-      stop("Invalids Created in Step 1")
-    }
-  }
+     names(catchments) = tolower(names(catchments))
+     
+     out = hydrofab::clean_geometry(catchments, ID = "featureid", keep = num,
+                                    sys = TRUE)
+      message("\t--- Writing Catchments")
+      write_sf(out, out_gpkg[i])
+   }
+  
+      message("Finished ", i, " of ", length(files))
 }
+
 
 
 # Rectify borders ---------------------------------------------------------
 
-for(i in 30:nrow(topos)){
+for(i in 1:nrow(topos)){
 
   VPU1 = topos$VPU1[i]
   VPU2 = topos$VPU2[i]
@@ -148,15 +124,15 @@ for(i in 30:nrow(topos)){
   to_keep_1 = bind_rows( filter(v1, !featureid %in% inds),
                          filter(in_cat, featureid %in% inds)) |>
     select(names(v1)) %>%
-    mutate(areasqkm = hydrofab::add_areasqkm(.)) %>%
-    nngeo::st_remove_holes()
+    mutate(areasqkm = add_areasqkm(.)) %>%
+    st_remove_holes()
 
   inds2 = in_cat$featureid[in_cat$featureid %in% v2$featureid]
 
   to_keep_2 = bind_rows( filter(v2, !featureid %in% inds2),
                          filter(in_cat, featureid %in% inds2)) |>
     select(names(v1)) %>%
-    mutate(areasqkm = hydrofab::add_areasqkm(.)) %>%
+    mutate(areasqkm = add_areasqkm(.)) %>%
     nngeo::st_remove_holes()
 
   log_info('\tWrite VPUS')
