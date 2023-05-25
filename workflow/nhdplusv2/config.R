@@ -1,6 +1,16 @@
-pacman::p_load(hydrofabric, logger,   archive, 
-               aws.s3,      sbtools,  sfheaders,   
-               parallel, pbapply,  arrow,       nngeo)
+pacman::p_load(
+  hydrofabric,
+  logger,
+  archive,
+  rmapshaper,
+  aws.s3,
+  sbtools,
+  sfheaders,
+  parallel,
+  pbapply,
+  arrow,
+  nngeo
+)
 
 source("workflow/nhdplusv2/utils.R")
 source("workflow/nhdplusv2/root_dir.R")
@@ -10,7 +20,7 @@ sf_use_s2(FALSE)
 topos = read.csv("data/vpu_topology.csv")
 
 facfdr_crs = '+proj=aea +lat_0=23 +lon_0=-96 +lat_1=29.5 +lat_2=45.5 +x_0=0 +y_0=0 +datum=NAD83 +units=m +no_defs'
-num        = 20
+num        = 50
 
 epa_bucket     = 'edap-ow-data-commons'
 

@@ -9,6 +9,7 @@ df = data.frame(path = normalizePath(list.files(reference_dir, full.names = TRUE
   ungroup() %>%
   filter(n == 3)
 
+unlink(df$outfile)
 v = unique(df$vpu)
 
 for(i in 1:length(v)){
