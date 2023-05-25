@@ -1,0 +1,28 @@
+Package: reference_features
+Title: Reference Featrue Workflows
+Version: 0.0.6
+Authors@R: 
+    c(person(given = "Mike",
+             family = "Johnson",
+             role = c("aut", "cre"),
+             email = "mikecp11@gmail.com"),
+      person(given = "Angus",
+             family = "Watters",
+             role = c("aut")),
+      person("NOAA", role = c("fnd")),
+      person("USGS", role = c("fnd")),
+      person("Lynker", role = c("fnd")))
+Description: The 'reference feature'  package seeks to build reference hydrofabric featrues
+License: MIT + file LICENSE
+URL: https://github.com/NOAA-OWP/nhdplusv2_reference_features
+BugReports: https://github.com/NOAA-OWP/nhdplusv2_reference_features
+Depends: 
+    R (>= 3.5)
+Suggests:
+    knitr,
+    rmarkdown
+VignetteBuilder: 
+    knitr
+Encoding: UTF-8
+RoxygenNote: 7.2.1
+LazyData: true
