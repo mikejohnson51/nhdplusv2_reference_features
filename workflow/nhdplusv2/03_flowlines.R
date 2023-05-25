@@ -1,3 +1,5 @@
+source('workflow/nhdplusv2/config.R')
+
 fl_paths  = list.files(fl_dir,  full.names = TRUE)
 ble_paths = list.files(ble_dir, full.names = TRUE)
 
@@ -5,11 +7,36 @@ new_atts = read_parquet(glue("{base_dir}/enhd_nhdplusatts.parquet"))
 vaa = get_vaa()
 par = 3
 
+# ble = read_sf('/Volumes/Transcend/ngen/NHDPlusNationalData/NHDPlusV21_National_Seamless_Flattened_Lower48.gdb',
+#               "BurnLineEvent")
+# 
+# ble2 = ble %>%
+#   st_zm() %>%
+#   filter(!st_is_empty(.))
+# 
+# nhdflag = vaa %>% filter(startflag == 1 | divergence == 2) %>%
+#   select(COMID = comid, vpuid)
+# 
+# ble3 = left_join(nhdflag, ble2, by = "COMID") %>%
+#   st_as_sf() %>% 
+#   filter(!st_is_empty(.))
+# 
+# ble4 = select(ble3, COMID, vpuid) %>% 
+#   st_cast("LINESTRING")
+# 
+# write_sf(ble4, "/Volumes/Transcend/reference_geometries/ble_events.gpkg")
+
+system.time({
+  b = read_sf('/Volumes/Transcend/reference_geometries/ble_events.gpkg')
+})
+
+
+
 for(i in 1:length(fl_paths)){
 
   fl_path   = fl_paths[i]
   which_VPU = gsub(".gpkg", "", gsub("NHDPlus", "", basename(fl_path)))
-  ble_path  = ble_paths[grep(which_VPU, basename(ble_paths))]
+  #ble_path  = ble_paths[grep(which_VPU, basename(ble_paths))]
   outfile   = glue("{reference_dir}flowlines_{which_VPU}.gpkg")
 
   if(!file.exists(outfile)){
@@ -22,16 +49,17 @@ for(i in 1:length(fl_paths)){
       align_nhdplus_names() %>%
       mutate(LENGTHKM  = add_lengthkm(.))
 
-    ble <- read_sf(ble_path) %>%
-      rename(COMID = LineID)
-
-    ble <- left_join(select(st_drop_geometry(nhd), COMID), ble, by = "COMID") %>%
-      st_as_sf() %>%
-      st_zm()
-
-    flag = !st_is_empty(st_geometry(ble)) & (nhd$StartFlag == 1 | nhd$Divergence == 2)
-
-    st_geometry(nhd)[flag] <- st_geometry(ble)[flag]
+    # ble <- left_join(select(st_drop_geometry(nhd), COMID), ble, by = "COMID") %>%
+    #   st_as_sf() %>%
+    #   st_zm()
+    
+    #sum(!st_is_empty(st_geometry(ble)))
+    
+    ble = filter(b, COMID %in% nhd$COMID)
+    
+    matcher = match(ble$COMID, nhd$COMID)
+    
+    st_geometry(nhd)[matcher] <- st_geometry(ble)
 
     custom_net <- st_drop_geometry(nhd) %>%
       select(COMID, FromNode, ToNode, Divergence) %>%

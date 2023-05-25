@@ -60,7 +60,7 @@ all_snap = data.frame(
   link = glue('https://{epa_bucket}.s3.amazonaws.com/{snap}')) %>%
   mutate(outfile = glue("{epa_download}NHDPlusSnapshot{VPU}.7z"),
          fl_shp  = glue("{epa_download}NHDPlus{region}/NHDPlus{VPU}/NHDSnapshot/Hydrography/NHDFlowline.shp"),
-         wb_shp  =glue("{epa_download}NHDPlus{region}/NHDPlus{VPU}/NHDSnapshot/Hydrography/NHDWaterbody.shp")) %>%
+         wb_shp  = glue("{epa_download}NHDPlus{region}/NHDPlus{VPU}/NHDSnapshot/Hydrography/NHDWaterbody.shp")) %>%
   filter(!fl_shp %in% list.files(epa_download, recursive  = TRUE, pattern = ".shp$"))
 
 ####
