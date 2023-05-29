@@ -1,0 +1,114 @@
+---
+title: "VPU Topology"
+author: "Angus Watters"
+date: "2023-04-20"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn = -1, verbose = FALSE)
+```
+This RMarkdown document summarizes the code used to generate a CSV file containing information about pairs of VPUs that intersect. The document provides a detailed explanation of each step in the code, along with summary information and a preview of the resulting data frame.
+
+This code loads two libraries sf and dplyr. It then creates a data frame called vpus using the nhdplusTools package, which contains information on Vector Processing Units (VPUs) boundaries.
+
+The code then uses st_make_valid function from the sf library to make sure the VPU boundaries are valid spatial objects.
+
+Next, it creates a data frame called x using the which function that finds the intersections between the dt object (which is the VPU boundaries object) and another object called sparse. The sparse object is not defined in the code provided, but it is likely a spatial object that has already been defined previously.
+
+The lapply function is used to apply a custom function to each row of x. The custom function sorts the row's numeric values and returns them as a list.
+
+The do.call and rbind functions are used to combine all the lists returned by the custom function into a single data frame called vars. The !duplicated function is used to remove duplicate rows.
+
+Finally, the code renames the columns of the data frame to "VPU1" and "VPU2", filters out rows where "VPU1" is equal to "VPU2", maps the numeric values in "VPU1" and "VPU2" to the corresponding VPU IDs, and writes the resulting data frame to a CSV file called "vpu_topology.csv" in the "data" directory.
+## Introduction
+
+This document summarizes the code used to generate a CSV file containing information about pairs of VPUs (vector processing units) that intersect.
+
+```{r, warning=FALSE, message=FALSE}
+library(sf)
+library(dplyr)
+```
+
+## Loading and Validating VPUs
+
+The code first loads VPU boundaries from the `nhdplusTools` package and ensures that their geometries are valid.
+```{r, warning=FALSE}
+vpus = nhdplusTools::vpu_boundaries
+dt = st_make_valid(vpus)
+```
+
+<br>
+
+## Finding Intersecting VPUs
+
+Then we find all pairs of VPUs that intersect.
+```{r}
+x = as.data.frame(which(st_intersects(dt, sparse = FALSE), arr.ind = T))
+```
+
+<br>
+
+## Converting Array Indices to VPU IDs
+
+Then convert array indices to pairs of VPU IDs, combines them into a data frame, and removes duplicates.
+```{r}
+vars = lapply(1:nrow(x), function(y){
+  A <- as.numeric(x[y, ])
+  A[order(A)]
+})
+df = do.call('rbind', vars)[!duplicated(vars),] %>%
+  data.frame() %>% 
+  setNames(c("VPU1", "VPU2")) 
+```
+
+<br>
+
+## Filtering VPU Pairs
+
+Resulting pairs are filtered to exclude cases where VPU1 and VPU2 are the same.
+```{r}
+df = df %>%
+  filter(VPU1 != VPU2)
+```
+
+<br>
+
+## Mapping Array Indices Back to VPU IDs
+
+Array indices are mapped back to VPU IDs.
+```{r}
+df = df %>%
+  mutate(VPU1 = dt$VPUID[VPU1],
+         VPU2 = dt$VPUID[VPU2])
+```
+
+<br>
+
+## Saving Result to CSV File
+Resulting data frame is saved to a CSV file.
+```{r, echo = T, eval = F}
+write.csv(df, "data/vpu_topology.csv", row.names = FALSE)
+```
+
+<br>
+
+## Summary Information
+```{r}
+cat("Number of VPUs:", nrow(vpus), "\n")
+cat("Number of VPU pairs with non-zero intersection:", nrow(df), "\n")
+```
+
+<br>
+
+## Result Preview
+```{r}
+head(df)
+```
+
+The code displays the first few rows of the resulting data frame. 
+
+```````````````````````````````````````````````````````

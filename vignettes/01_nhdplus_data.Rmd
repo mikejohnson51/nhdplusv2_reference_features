@@ -1,0 +1,22 @@
+---
+title: "01 - NHDPlus Data"
+author: "Angus Watters"
+date: "2023-04-20"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+options(warn = -1, verbose = FALSE)
+```
+The R script is used to download and process spatial data related to the National Hydrography Dataset Plus (NHDPlus) from the Environmental Protection Agency (EPA).
+
+After loading the config.R file to set up file structure, the script gets the EPA bucket from S3 and obtains a data frame listing objects from the EPA bucket. It then defines and downloads various files related to catchments, flowlines, and water bodies, from which shapefiles are extracted, and data is written to geopackages using the ogr2ogr tool. Finally, the code downloads and extracts burn component files, and the resultant data is written to geopackages.
+
+The key outputs and results of running this script are the following:
+
+A set of geopackages for catchments, flowlines, and waterbodies.
+The shapefiles for catchments, flowlines, and waterbodies.
+The burn component files, which are written to geopackages.

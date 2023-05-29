@@ -38,6 +38,16 @@ reference_dir  = glue('{base_dir}/04_reference_geometries/')
 
 final_dir  = glue('{base_dir}/reference_features/')
 
+# path to NHDPlus BLE events folder
+nhdplus_ble_path <- "D:/NHDPlusNationalData/NHDPlusV21_National_Seamless_Flattened_Lower48.gdb"
+# nhdplus_ble_path <- '/Volumes/Transcend/ngen/NHDPlusNationalData/NHDPlusV21_National_Seamless_Flattened_Lower48.gdb'
+
+# create base dir if it doesn't already exist
+if(!dir.exists(base_dir)) {
+  message(glue('Base directory does not exist...\nCreating directory: {base_dir}'))
+  dir.create(base_dir, showWarnings = FALSE)
+}
+
 dir.create(epa_download,   showWarnings = FALSE)
 dir.create(catchments_dir, showWarnings = FALSE)
 dir.create(cleaned_dir,    showWarnings = FALSE)

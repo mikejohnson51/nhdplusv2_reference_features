@@ -1,0 +1,1151 @@
+---
+title: "04 - Catchment"
+author: "Angus Watters"
+date: "2023-04-20"
+output:
+  html_document:
+    toc: true
+---
+
+```{r setup, include=FALSE}
+library(patchwork)
+library(ggmapinset)
+library(ggplot2)
+library(sf)
+library(hydrofab)
+library(nhdplusTools)
+library(dplyr)
+library(rmapshaper)
+
+knitr::opts_chunk$set(echo = TRUE)
+options(warn = -1, verbose = FALSE)
+source("../nhdplusv2/utils.R")
+
+file <- "D:/nhdplusv2_reference_features/02_Catchments/NHDPlus06.gpkg"
+
+# ggplot theme 
+thm <- 
+  ggplot2::theme_bw() +
+  ggplot2::theme(
+    plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5)
+    # plot.title = ggplot2::element_text(size = 16, face = "bold"),
+    # plot.subtitle =  ggplot2::element_text(size = 14)
+  )
+group_colors <- c(
+  "19485688" = "#00BA38",
+  # "19750735" = "gold",
+  # "19750785" = "midnightblue",
+    "19485662" = "#F8766D",
+  "19485570" = "#619CFF",
+  "Border"   = "red"
+  # "19750745" ="#F8766D"
+                  )
+
+
+lng = c(-82.35019)
+lat = c(36.13143)
+
+pt <-   data.frame(lng = lng, 
+                   lat = lat
+                   ) %>% 
+  sf::st_as_sf( coords = c("lng", "lat"), crs = 4326) %>% 
+  sf::st_geometry() %>% 
+  sf::st_centroid()
+# This catchment processing script takes in a set of sf polygons called "catchments" and process them to remove any internal boundaries and small island polygons. It then returns a cleaned sf dataframe with only single valid polygon geometries. The function has several parameters, including the catchment ID, a CRS value, a grid value for simplification, and a system variable that controls whether the Mapshaper library is used or not. The function performs a quick validity check on the input geometries, then casts the multipolygons to polygons and adds a feature count column. If any geometries fail the validity check or are not of the correct geometry type, the function separates the polygons with multiple feature counts and dissolves and explodes them if necessary. The area is recalculated for the parts, and the biggest parts in each catchment are selected, with the smallest ones removed. The intersection between the big and small parts is computed, and the resulting linestrings are used to create a new sf dataframe with only valid polygons. Finally, the cleaned sf dataframe is simplified using the grid value and returned.
+```
+
+# Read in catchments data
+```{r, eval = TRUE, echo = TRUE}
+catchments        = read_sf(file)
+names(catchments) = tolower(names(catchments))
+```
+
+These catchments are from VPU 6 which contains 57,642 unique features. The data comes in with each unique feature represented by a multipolygon geometry
+
+```{r, eval = TRUE, echo = FALSE}
+# create a table
+table_data <- data.frame(
+  ID = c("POLYGON", "MULTIPOLYGON"), 
+  Count = c(0, 57642),
+  "Feature IDs" = c(length(unique(catchments$featureid)))
+  )
+
+knitr::kable(table_data, format = "markdown", col.names = c("Geometry", "Count", "Feature IDs"))
+```
+
+However in reality, each catchment should only be represented by a single continguous polygon geometry. So what happens if we try to cast all of our MULTIPOLYGONs to POLYGON geometries?
+
+```{r, eval = TRUE, echo = TRUE}
+polys <- 
+  catchments %>% 
+  st_cast("POLYGON")
+```
+We end up with *more geometries than we have unique feature IDs*
+
+```{r, eval = TRUE, echo = FALSE}
+# create a table
+table_data <- data.frame(
+  ID = c("POLYGON", "MULTIPOLYGON"), 
+  Count = c(63319, 0),
+  "Feature IDs" = c(length(unique(catchments$featureid)))
+  )
+
+# print the table using kable
+knitr::kable(table_data, format = "markdown", col.names = c("Geometry", "Count",   "Feature IDs"))
+```
+In this case, we have 5677 extra POLYGONs that were created. This means we have a set of smaller polygons that are discontinuous/detached from there bigger "parent" polygons. 
+
+```{r, eval = FALSE, echo = FALSE}
+
+# mapview::mapview(pt)
+cat_t <- sf::st_transform(catchments, 4326)
+# cat_t2 <- rmapshaper::ms_simplify(catchments, keep = 0.8)
+
+
+cat_plot <- ggplot2::ggplot() +
+# replace sf layers with their `_inset` versions
+  ggmapinset::geom_sf_inset(data = sf::st_transform(cat_t, 4326)) +
+  gghighlight::gghighlight(featureid %in% c(19485688, 19485662, 19485570)) +
+  ggplot2::labs(
+    # title = "VPU 06 Catchments"
+    # subtitle = 'Highlighting GNIS IDs with multiple waterbody geometries',
+    # fill  = "Polygon"
+  ) +
+  # add the inset frame (the two circles with the connecting lines)
+  ggmapinset::geom_inset_frame(colour = "red") +
+  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+                                         scale = 22,
+                                         translation = c(240, -80),
+                                         radius = 3)) +
+  thm
+
+ggplot2::ggsave(
+  cat_plot,
+  # filename = "catchments_highlight2.png",
+  filename = "../img/catchments_highlight2.png",
+  height = 5,
+  width = 12,
+  scale = 1
+)
+```
+
+<center>
+![VPU 6 with inset map focused on area of interest](../img/catchments_highlight2.png)
+</center>
+
+<br>
+
+Let's look at a smaller area of interest to get an example of this multipolygon issue.
+
+```{r, eval = FALSE, echo = FALSE}
+# 19750793 small bit should be in 19750775
+# 19750745 small bit should be in 19750775
+aoi <- dplyr::filter(catchments, featureid %in% c(19485688, 19485662, 19485570)) 
+# filter to catchments interest
+# aoi <- dplyr::filter(pgs, featureid %in% c(19750775, 19750793, 19750745)) 
+# aoi <- dplyr::filter(polys, featureid %in% c(19750775, 19750735,19750785, 19750793, 19750745)) 
+# 
+aoi_plot <- 
+  aoi %>%
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  ggplot2::labs(
+    fill = "Feature ID"
+  ) +
+  thm + 
+  ggplot2::theme(
+  # legend.position = "bottom",
+  legend.justification=c(-0.25,-0.5), 
+  legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+aoi_plot
+ggplot2::ggsave(
+  aoi_plot,
+  filename = "../img/aoi_intro_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+```
+
+<center>
+![Area of Interest](../img/aoi_intro_plot.png)
+</center>
+
+<br>
+
+Looking at the plot above, we can see that that **feature ID 19485570 (blue)** has a set of discontinuous polygons that **should actually be included in the red or green polygons (19485662, 19485688).**
+ 
+It is not uncommon to see this phenomena throughout the entire NHDPlus dataset. If only there were a function that could clean these geometries...
+
+Introducing the **`clean_geometry2()`** function from **`hydrofab`**! The purpose of **`clean_geometry2()`** is to resolve these problems with the NHDPlus catchment dataset.
+
+<br>
+<br>
+
+# Preprocess: Snap to Grid
+Before we do any processing, we'll need to snap our catchment polygons to a grid with 0.0009 resolution cells. 
+```{r, eval = TRUE, echo = TRUE}
+catchments = lwgeom::st_snap_to_grid(
+  st_transform(catchments, 5070), 
+  size = .0009
+  )
+```
+
+```{r, eval = TRUE, echo = FALSE}
+# snapped = lwgeom::st_snap_to_grid(
+#   st_transform(catchments, 5070), 
+#   size = .0009
+#   )
+# 
+# no_snap = st_transform(catchments, 5070)
+# 
+# no_snap_plot <-
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(data = no_snap) +
+#   ggplot2::labs(
+#     title = "Pre grid snap"
+#   ) +
+#   thm
+# ggplot2::ggsave(
+#   no_snap_plot,
+#   filename = "../img/pre_grid_snap.png",
+#   height = 12,
+#   width = 14, 
+#   scale = 1
+# )
+# snap_plot <-
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(data = snapped) +
+#   ggplot2::labs(
+#     title = "Post grid snap"
+#   ) +
+#   thm
+# 
+# ggplot2::ggsave(
+#   snap_plot,
+#   filename = "../img/post_grid_snap.png",
+#   height = 12,
+#   width = 14,
+#   scale = 1
+# )
+```
+
+<br>
+<br>
+
+# 1. Explode the multipart geometries polygons 
+The first step is to cast all of the NHDPlus multipolygon geomtries into standalone polygons. We then make sure our polygons are still valid, and we generate a count of the number of polygons in each `featureid`. Lastly, we recalculate our areas as now we have broken some catchments into there individual pieces and this means we need to recalculate our areas. 
+
+```{r, eval = TRUE, echo = TRUE}
+polygons <- 
+  catchments %>% 
+  sf::st_cast("POLYGON") %>% 
+  fast_validity_check() %>% 
+  dplyr::add_count(featureid) %>% 
+  dplyr::mutate(
+    areasqkm = hydrofab::add_areasqkm(.),
+    tmpID    = 1:dplyr::n()
+    ) %>% 
+  nhdplusTools::rename_geometry("geometry") 
+```
+
+```{r, eval = TRUE, echo = FALSE}
+# table(sf::st_geometry_type(polygons))
+
+# create a table
+table_data <- data.frame(
+  ID = c("POLYGON", "MULTIPOLYGON"), 
+  Count = c(63319, 0),
+  "Feature IDs" = c(length(unique(catchments$featureid)))
+  )
+
+# print the table using kable
+knitr::kable(table_data, format = "markdown", col.names = c("Geometry", "Count",   "Feature IDs"))
+```
+
+<br>
+
+Like we saw before, we have **~5000 extra discontiguous/detached polygons** that must be placed in there rightful homes. 
+
+Too keep this example at a manageable scale, we are going to filter our catchments just to the problematic example shown earlier. 
+
+```{r, eval = TRUE, echo = TRUE}
+polygons <- dplyr::filter(polygons, featureid %in% c(19485688, 19485662, 19485570)) 
+# polygons <- dplyr::filter(polygons, featureid %in% c(19750775, 19750735,19750785, 19750793, 19750745)) 
+
+polygons
+```
+
+Now we have **3 unique feature IDs and 9 polygons**. Feature ID 19485662 (red) and 19485688 (green) both just a single polygon geometry, while feature ID 19485570 (blue) has 7 separate polygon geometries. The 6 smaller polygons in feature ID 19485570 need to be assigned new homes. The logical choice for these smaller polygons is for them to be dissolved into either feature ID 19485662 (red) and 19485688 (green).
+
+```{r, eval = FALSE, echo = FALSE}
+unique_catchments <- 
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors)
+
+ unique_polys <- 
+  polygons %>% 
+  dplyr::mutate(
+    tmpID = as.character(tmpID)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = tmpID)) + 
+  ggplot2::theme_bw()
+
+unique_catchments + unique_polys
+unique_catchments
+```
+
+<br>
+<br>
+
+# 2. Separates catchments into main and small parts
+Next step is to isolate the polygons that are made up of multiple features. We then dissolve any internal boundaries, recalculate our areas and assign a new temporary ID `(newID)` variable that we will use later on. 
+
+```{r}
+# separate polygons with more than 1 feature counts
+extra_parts = 
+  polygons %>% 
+  dplyr::filter(n != 1) %>% 
+  rmapshaper::ms_dissolve("featureid", copy_fields = names(.)) %>% 
+  rmapshaper::ms_explode() %>% 
+  dplyr::mutate(areasqkm = hydrofab::add_areasqkm(.)) %>% 
+  dplyr::group_by(featureid) %>%
+  dplyr::mutate(
+    newID = dplyr::row_number(dplyr::desc(areasqkm))
+  ) %>% 
+  dplyr::ungroup()
+
+extra_parts
+```
+
+```{r, eval = FALSE, echo = FALSE}
+extra_parts_plot <- 
+  extra_parts %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors) + 
+  ggplot2::labs(
+    fill = "Feature ID"
+  ) +
+  thm
+
+extra_parts_plot
+
+ggplot2::ggsave(
+  extra_parts_plot,
+  filename = "../img/extra_parts_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+```
+
+<center>
+![Problematic Catchment Geometries](../img/extra_parts_plot.png)
+</center>
+
+<br>
+
+Now we have our multipolygon catchments that are causing issues. The figure above shows the geometry of the problematic catchment.
+
+<br>
+
+Our next step is to split these multipolygon catchments into there main and small parts. The main parts will join the rest of the single polygon catchments, while the smaller parts will be left behind so that they can reassigned to a another catchment such that all catchments in our final dataset are single continuous polygons.
+
+<br>
+
+# 3. Extract the biggest parts by area for each catchment, adds them to the rest of the valid polygons
+
+Next, we get the biggest polygon by area from our multipolygon feature (`main_parts`). This leaves us with the main, big catchment area for all of our problem catchments. In our case, this is just a single polygon. 
+
+```{r, eval = TRUE, echo = TRUE}
+# get the biggest parts by area in each catchment and bind with rest of good_to_go catchments
+main_parts <- 
+  extra_parts %>% 
+  dplyr::group_by(featureid) %>% 
+  dplyr::slice_max(areasqkm, with_ties = FALSE) %>% 
+  dplyr::ungroup() 
+
+main_parts
+```
+
+<br>
+<br>
+
+```{r, eval = FALSE, echo = FALSE}
+main_parts_plot <- 
+  main_parts %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values = group_colors) + 
+  ggplot2::labs(
+    fill = "Feature ID"
+  ) +
+  thm
+
+# ggplot2::ggsave(
+#   extra_parts_plot,
+#   filename = "../img/extra_parts_plot.png",
+#   height = 6,
+#   width = 10,
+#   scale = 1
+# )
+```
+
+# 4. Extract the small polygons
+
+We'll find the small polygons by filtering down our `extra_parts` to the parts that are not in the `main_parts` dataset. We are left with 6 small, discontiguous polygons. 
+
+```{r, eval = TRUE, echo = TRUE}
+small_parts <-
+  extra_parts %>%
+  # group_by(featureid) %>% 
+  dplyr::filter(newID != main_parts$newID) %>% 
+  rmapshaper::ms_dissolve("featureid", copy_fields = names(.)) %>%
+  rmapshaper::ms_explode() %>%
+  dplyr::mutate(
+    areasqkm = hydrofab::add_areasqkm(.),
+    newID    = 1:dplyr::n()
+    ) %>% 
+  dplyr::select(newID)
+
+small_parts
+```
+
+```{r, eval = FALSE, echo = FALSE}
+
+discon_small_plot <- 
+  extra_parts %>%
+  # group_by(featureid) %>% 
+  filter(newID != main_parts$newID) %>% 
+  ms_dissolve("featureid", copy_fields = names(.)) %>%
+  ms_explode() %>%
+  mutate(
+    areasqkm = add_areasqkm(.),
+    newID    = 1:n()
+    ) %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  ggplot2::labs(
+    # title = "Discontinuous small geometries",
+    fill  = "Feature ID"
+    # subtitle = ""
+  ) + 
+  thm
+
+ggplot2::ggsave(
+  discon_small_plot,
+  filename = "../img/discontinues_small_parts_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+```
+
+<center>
+![Discontinuous small geometries](../img/discontinues_small_parts_plot.png)
+</center>
+
+Then lets bind our `main_parts` polygons with the rest of the single polygon features in our original `polygons` dataset. This gives us a complete set of the main catchment polygons.
+
+```{r, eval = TRUE, echo = TRUE}
+main_parts <-  bind_rows(main_parts, filter(polygons, n == 1))
+
+main_parts
+```
+
+```{r, eval = FALSE, echo = FALSE}
+main_parts_plot <- 
+  main_parts %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values = group_colors) +
+  ggplot2::labs(
+    # title = "Main catchment geometries w/ small parts removed",
+    fill  = "Feature ID"
+    # subtitle = ""
+  ) + 
+  thm
+
+ggplot2::ggsave(
+  main_parts_plot,
+  filename = "../img/main_parts_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+# mapview::mapview(big_parts)
+```
+
+<center>
+![Main catchment geometries after removing small discontinuous geometries](../img/main_parts_plot.png)
+</center>
+
+To summarize where we are at. We have 2 groups of data. The `main_parts` group  which is our large polygon geometries, and the `small_parts` group, which contains all small, discontinuous polygons that need to be rejoined into an appropriate catchment in our `main_parts` dataset.
+
+We now have 2 datasets: 
+
+1. `main_parts`, containing all the primary catchment geometries, 
+2. `small_parts`, containing all the small, discontiguous polygons that need reassignment
+
+
+```{r, eval = FALSE, echo = FALSE}
+tmap <- 
+  main_parts %>% 
+  dplyr::mutate(
+    type = "main_parts"
+  ) %>% 
+  dplyr::bind_rows(
+    dplyr::mutate(small_parts, type = "small_parts")
+  ) %>% 
+  sf::st_transform(4326)
+
+sep_parts_plot <- 
+  tmap %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = type)) +
+  # ggplot2::scale_fill_manual(values = group_colors) +
+    ggplot2::labs(
+    # title = "Seperating catchments into main and secondary parts",
+    fill  = ""
+    # subtitle = ""
+  ) + 
+  thm 
+  # ggplot2::theme(
+  #   # legend.position = "bottom",
+    # legend.justification=c(-0.25,-0.4),
+    # legend.position=c(0,0),
+  #   legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+  #    # legend.spacing.x = unit(0.5, "cm")
+  #   )
+# sep_parts_plot
+ggplot2::ggsave(
+  sep_parts_plot,
+  filename = "../img/seperated_parts_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+```
+
+<center>
+![Catchments seperated into main (red) and secondary (blue) parts](../img/seperated_parts_plot.png)
+</center>
+
+<br>
+
+Now we need to find new homes for all the small polygons in `small_parts`
+
+<br>
+<br>
+
+# 5. Polygon reassignment
+
+We use the **longest shared border** as the rule for deciding which `main_parts` polygon our `small_parts` should dissolve into. 
+
+<br>
+
+To do this we first find the geometries from `main_parts` that intersect with `small_parts`, we then extract LINESTRING geometries from the intersections.
+
+```{r, eval = TRUE, echo = TRUE}
+# get the intersection between big parts and small parts and pull out the LINESTRINGs
+out = 
+  small_parts %>% 
+  sf::st_intersection(sf::st_make_valid(main_parts)) %>%
+  sf::st_collection_extract("LINESTRING")
+
+out
+```
+
+<br>
+
+We then place the small polygons into the catchment that they share the longest border with
+```{r, eval = TRUE, echo = TRUE}
+# calculate linestring lengths and keep the longest one
+ints = 
+  out %>%
+  dplyr::mutate(l = sf::st_length(.)) %>%
+  dplyr::group_by(.data$newID) %>%
+  dplyr::slice_max(.data$l, with_ties = FALSE) %>%
+  dplyr::ungroup()
+
+```
+
+```{r, eval = FALSE, echo = FALSE}
+out %>% 
+  dplyr::mutate(
+    type = "intersections"
+  ) %>% 
+  dplyr::bind_rows(
+    dplyr::mutate(small_parts, type = "small_parts")
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = type)) 
+```
+
+```{r, eval = FALSE, echo = FALSE}
+# mapview::mapview(main_parts, col.region = "red") + mapview::mapview(small_parts, col.region = "green") + ints + out 
+```
+
+This provides the `featureid` of the `main_parts` polygon that shares the longest border with the `small_parts` polygons, and thus identifying the catchment that the `small_parts` polygons should dissolve into.
+
+<br>
+<br>
+
+# 6. Dissolves `small_parts` into `main_parts`
+
+We can now join the `small_parts` polygons, with the `ints` data to get the `featureid` of the catchments that share the longest border with `small_parts`. Then we bind this data back with `main_parts` and do a final union on the `featureid` column in our data. 
+```{r, eval = TRUE, echo = TRUE}
+# right join small polygons with intersection data by newID to get featureids to eventually union on
+tj <-  
+  small_parts %>% 
+  dplyr::right_join(
+    dplyr::select(sf::st_drop_geometry(ints), featureid, newID),
+    by = "newID"
+    ) %>%
+  dplyr::bind_rows(main_parts) %>%
+  dplyr::select(-areasqkm, -tmpID, -newID) %>%
+  dplyr::group_by(featureid) %>%
+  dplyr::mutate(n = dplyr::n()) %>%
+  dplyr::ungroup() %>%
+  nhdplusTools::rename_geometry("geometry")
+
+# Do a final union of all multipolygon geometries 
+# and bind these rectified catchments back with the already correct catchment polygons
+in_cat <-
+  hydrofab::union_polygons(
+    dplyr::filter(tj, .data$n > 1),
+    "featureid"
+  ) %>%
+  dplyr::bind_rows(
+    dplyr::select(
+      dplyr::filter(tj, .data$n == 1),
+      "featureid")
+  ) %>%
+  dplyr::mutate(tmpID = 1:dplyr::n()) %>%
+  fast_validity_check()
+```
+
+```{r, eval = FALSE, echo = FALSE}
+final_plot <- 
+  in_cat %>% 
+    dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values = group_colors) + 
+  ggplot2::labs(
+    fill  = "Feature ID"
+  ) + 
+  thm 
+  # ggplot2::theme(
+  #   legend.justification = c(-0.25,-0.4), 
+  #   legend.position      = c(0,0),
+  #   legend.background    = ggplot2::element_rect(fill="transparent", size=.5, linetype = "dotted")
+  #   )
+
+# sep_parts_plot
+ggplot2::ggsave(
+  final_plot,
+  filename = "../img/final_catchment_union_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+# mapview::mapview(in_cat) + mapview::mapview(main_parts, col.region = "red") + 
+# mapview::mapview(small_parts, col.region = "green") + ints + out 
+```
+
+<center>
+![Final unionified catchment geometries](../img/final_catchment_union_plot.png)
+</center>
+
+
+
+```{r, eval = FALSE, echo = FALSE}
+# ----------------------------------------------
+# ---- CODE FOR MAKING CLEAN CATCHMENTS GIF ----
+# ----------------------------------------------
+
+start_poly <-
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "1 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  start_poly,
+  filename = "../img/01_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+highlight_poly <-
+polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  gghighlight::gghighlight(featureid == 19485570) + 
+  ggplot2::scale_fill_manual(values=group_colors) +
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "2 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  highlight_poly,
+  filename = "../img/02_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+
+small_highlight <-
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>% 
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485570",
+      type = "smalls"
+      ),
+      geometry = x
+      
+      )
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  gghighlight::gghighlight(type == "smalls") +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "3 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+ggplot2::ggsave(
+  small_highlight,
+  filename = "../img/03_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+# plot(small_parts$geometry)
+
+int_line_plot <-
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485570",
+      type = "smalls"
+      ),
+      geometry = x
+      )
+  ) %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_cast(
+        sf::st_as_sf(
+        sf::st_buffer(sf::st_union(ints), 5)
+        ), "MULTIPOLYGON"
+        ),
+      featureid = "Border",
+      type = "border"
+      ),
+      geometry = x
+      )
+    ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  # ggplot2::geom_sf(data = ints, color = "red", lwd = 1) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  # gghighlight::gghighlight(featureid %in% c("19485570", "Border")) +
+  gghighlight::gghighlight(type %in% c("smalls", "border")) +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "4 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+ggplot2::ggsave(
+  int_line_plot,
+  filename = "../img/04_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+big_small_plot <-
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485570",
+      type = "smalls"
+      ),
+      geometry = x
+      )
+  ) %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_cast(
+        sf::st_as_sf(
+        sf::st_buffer(sf::st_union(ints), 5)
+        ), "MULTIPOLYGON"
+        ),
+      featureid = "Border",
+      type = "border"
+      ),
+      geometry = x
+      )
+    ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  # ggplot2::geom_sf(data = ints, color = "red", lwd = 1) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  # gghighlight::gghighlight(featureid %in% c("19485570", "Border")) +
+  gghighlight::gghighlight(type %in% c("smalls", "border") | featureid == 19485688) +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+   ggplot2::labs(
+    fill = "Feature ID",
+    caption = "5 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+# 19485688
+ggplot2::ggsave(
+  big_small_plot,
+  filename = "../img/05_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+change_plot <-
+polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485688",
+      type = "smalls"
+      ),
+      geometry = x
+      )
+  ) %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_cast(
+        sf::st_as_sf(
+        sf::st_buffer(sf::st_union(ints), 5)
+        ), "MULTIPOLYGON"
+        ),
+      featureid = "Border",
+      type = "border"
+      ),
+      geometry = x
+      )
+    ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  # ggplot2::geom_sf(data = ints, color = "red", lwd = 1) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  # gghighlight::gghighlight(featureid %in% c("19485570", "Border")) +
+  gghighlight::gghighlight(type %in% c("smalls", "border") | featureid == 19485688) +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "6 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  change_plot,
+  filename = "../img/06_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+third_to_final_plot <- 
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485688",
+      type = "smalls"
+      ),
+      geometry = x
+      )
+  ) %>%
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  # ggplot2::geom_sf(data = ints, color = "red", lwd = 1) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  # gghighlight::gghighlight(featureid %in% c("19485570", "Border")) +
+  gghighlight::gghighlight(type %in% c("smalls", "border") | featureid == 19485688) +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "7 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  third_to_final_plot,
+  filename = "../img/07_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+second_to_final <- 
+  polygons %>% 
+  dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>%
+  dplyr::mutate(type = "bigs") %>%
+  dplyr::bind_rows(
+    dplyr::rename(
+      dplyr::mutate(
+      sf::st_as_sf(sf::st_union(small_parts)),
+      featureid = "19485688",
+      type = "smalls"
+      ),
+      geometry = x
+      )
+  ) %>%
+  rmapshaper::ms_dissolve("featureid") %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  # ggplot2::geom_sf(data = ints, color = "red", lwd = 1) +
+  ggplot2::scale_fill_manual(values=group_colors) +
+  # gghighlight::gghighlight(featureid %in% c("19485570", "Border")) +
+  gghighlight::gghighlight( featureid == 19485688) +
+  # ggplot2::geom_sf(data = small_parts, fill = "black") + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "8 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  second_to_final,
+  filename = "../img/08_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+final_gif_plot <- 
+  in_cat %>% 
+    dplyr::mutate(
+    featureid = as.character(featureid)
+  ) %>% 
+  ggplot2::ggplot() +
+  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+  ggplot2::scale_fill_manual(values = group_colors) + 
+  ggplot2::labs(
+    fill = "Feature ID",
+    caption = "9 / 9"
+  ) +
+  thm + 
+  ggplot2::theme(
+  legend.text = ggplot2::element_text(size = 12),
+  legend.title = ggplot2::element_text(face = "bold", size = 12),
+  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # legend.justification=c(-0.7,-1),
+  # legend.position=c(0,0),
+  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+   # legend.spacing.x = unit(0.5, "cm")
+  )
+
+ggplot2::ggsave(
+  final_gif_plot,
+  filename = "../img/09_catchment_gif_plot.png",
+  height = 6,
+  width = 10,
+  scale = 1
+)
+
+# library(gifski)
+# png_files <- list.files("../img/", pattern = "_catchment_gif_plot", full.names = TRUE)
+# 
+# gifski::gifski(png_files, gif_file = "../gif/cleaning_catchments.gif", width = 1700, height = 1000, delay = 1.5)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
