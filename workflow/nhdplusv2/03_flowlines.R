@@ -60,6 +60,8 @@ output_file <- glue("{base_dir}/ble_events.gpkg")
 # create Burn Line Events geopackage if it doesn't exist
 if (!file.exists(output_file)) {
   
+  message("Creating ble_events.gpkg...")
+  
   # read in BurnLineEvents from NHD geodatabase
   ble <- read_sf(nhdplus_ble_path, "BurnLineEvent")
   # ble <- read_sf('/Volumes/Transcend/ngen/NHDPlusNationalData/NHDPlusV21_National_Seamless_Flattened_Lower48.gdb', "BurnLineEvent")
@@ -122,7 +124,6 @@ for(i in 1:length(fl_paths)){
   # Check if the output file does not exist
   if(!file.exists(outfile)){
     
-    
     # Read flowlines from file, join with VAA and new_atts
     nhd <- 
       fl_path %>%
@@ -140,12 +141,6 @@ for(i in 1:length(fl_paths)){
         ) %>%
       align_nhdplus_names() %>%
       mutate(LENGTHKM  = add_lengthkm(.))
-    
-    # goi <- "1285672"
-    # nhd %>% 
-    #   dplyr::filter(gnis_id == goi) %>% 
-    #   # .$geom %>% 
-    #   plot()
     
     # Filter the b burn line events dataset on matching COMIDs in 'nhd'
     ble = filter(b, COMID %in% nhd$COMID)
@@ -171,12 +166,15 @@ for(i in 1:length(fl_paths)){
         custom_net,
         by = c("COMID" = "comid")
         ) %>%
+      # dplyr::relocate(COMID, toCOMID, override_tocomid)
       mutate(override_tocomid = ifelse(toCOMID == 0, override_tocomid, toCOMID))
 
     # is a headwater and for sure flows to something,  where COMID is not in override_tocomid
     check <- !nhd$COMID %in% nhd$override_tocomid &
       !(nhd$override_tocomid == 0 | is.na(nhd$override_tocomid) |
           !nhd$override_tocomid %in% nhd$COMID)
+    
+    # table(check)
     
     # filter nhd based on the check condition above
     check_direction <- filter(nhd, check)
@@ -197,69 +195,130 @@ for(i in 1:length(fl_paths)){
                    split(check_direction, seq_len(nrow(check_direction))),
                    split(matcher, seq_len(nrow(matcher))))
     
+    
     # make cluster of parallel workers
     cl <- makeCluster(par)
 
     # check and fix these, applies fix_flowdir() in parallel to each element of fn_list 
     new_geom <- pblapply(
-      cl = cl,
-      X = fn_list,
+      cl  = cl,
+      X   = fn_list,
       FUN = function(x) {
-        nhdplusTools::fix_flowdir(x[[1]]$COMID,
-                                  fn_list = list(
-                                    flowline  = x[[1]],
-                                    network   = x[[2]],
-                                    check_end = "end"
-                                  ))
+        nhdplusTools::fix_flowdir(
+                        x[[1]]$COMID,
+                        fn_list = list(
+                          flowline  = x[[1]],
+                          network   = x[[2]],
+                          check_end = "end"
+                          )
+                        )
       }
     )
     
     # stop parallel cluster     
     stopCluster(cl)
     
-    # check for errors based on try-error conditions then update check as needed
+    # check for errors based on try-error conditions
+    # identify the geometries that encountered errors during fix_flowdir() and store in "errors" df 
     error_index <- sapply(new_geom, inherits, what = "try-error")
+    
+    # subset error geometries
     errors <- filter(nhd, COMID %in% check_direction$COMID[error_index])
     
+    message("Number of errors: ", nrow(errors))
+    
+    message("check vector values:\n",
+            paste0(names(table(check)), ": ", table(check), sep = "\n"))
+    
+    message("\nUpdating 'check' to account for errors in fix_flowdir()...\n")
+    
     # update check as needed
+    # marks the flowlines that do NOT meet the conditions for being a headwater, based on the errors that occurred.
     check[which(nhd$COMID %in% errors$COMID)] <- FALSE
     
+    message("check vector values:\n",
+      paste0(names(table(check)), ": ", table(check), sep = "\n")
+      )
+
     # Check for errors other than empty geometry errors
     if(!all(sapply(st_geometry(errors), st_is_empty))) {
       stop("Errors other than empty geometry from fix flowdir")
     }
     
+    message("Replacing NHD flowline geometries with directionaly correct flowline geometries...")
+    
     # Replace the geometry in 'nhd' with the corrected geometries
     st_geometry(nhd)[check] <- do.call(c, new_geom[!error_index])
-    
-    fn_list[[1]][[1]]$geom%>% 
-      plot()
-    fn_list[[1]][[2]]$geom %>% 
-      plot()
-    
-    chk <- fn_list[[1]][[1]]
-    mtch <- fn_list[[1]][[2]]
-    
-    df <- dplyr::bind_rows(chk, mtch)
-    
-    df %>% 
-      names()
-    df <- df %>% 
-      dplyr::select(COMID, override_tocomid, FromNode, ToNode, StartFlag, Divergence)
-    
-    fixed_df <- 
-      nhd %>% 
-      dplyr::filter(COMID %in% df$COMID) %>% 
-      dplyr::select(COMID, override_tocomid, FromNode, ToNode, StartFlag, Divergence)
-    mapview::mapview(fixed_df, color = "red") + df
-    mapview::mapview(fn_list[[1]][[1]]$geom) + fn_list[[1]][[2]]$geom
-    
+  
+    logger::log_info("Saving VPU ", which_VPU, " flowlines to:\n--> {outfile}")
+      
     # Filter nhd on COMIDs in new_atts and save out result to output file
     nhd %>% 
       filter(COMID %in% new_atts$comid) %>%
-      select( -override_tocomid) %>%
+      select(-override_tocomid) %>%
       write_sf(outfile, "flowlines")
   }
 
   logger::log_info("Finished VPU ", which_VPU, " flowlines")
 }
+
+## ---- test view the updated flow directions  ----
+## RUN AFTER THE BELOW CODE has been run in the script above
+
+# nhd2  <- nhd
+
+# Replace the geometry in 'nhd' with the corrected geometries
+# st_geometry(nhd2)[check] <- do.call(c, new_geom[!error_index])
+
+# #  test view the updated flow directions 
+# aoi <-
+#   data.frame(lng = -81.30865, lat =  37.06332) %>%
+#   st_as_sf(coords = c("lng", "lat"), crs = 4269) %>%
+#   sf::st_transform(5070) %>%
+#   sf::st_buffer(10000) %>%
+#   sf::st_transform(4269)
+# 
+# # mapview::mapview(aoi)
+# 
+# orig_fline <- nhd[check,] %>%
+#   sf::st_filter(aoi) %>%
+#   dplyr::mutate(  source = "original")
+# 
+# new_fline <-  nhd2[check,] %>%
+#   sf::st_filter(aoi) %>%
+#   dplyr::mutate(source = "update" )
+# # 
+# flines <- dplyr::bind_rows(orig_fline, new_fline )
+# # 
+# end_pts <-  flines %>%
+#   nhdplusTools::get_node(position = "end") %>%
+#   dplyr::mutate( position = "end")
+# 
+# end_pts$COMID <- flines$COMID
+# end_pts$source <- flines$source
+# end_pts <- dplyr::relocate(end_pts, COMID, position, source, geometry)
+
+# start_pts <-
+#   flines %>% 
+#   nhdplusTools::get_node(position = "start") %>% 
+#   dplyr::mutate(
+#     position = "start"
+#   )
+# 
+# start_pts$COMID  <- flines$COMID
+# start_pts$source <- flines$source
+# start_pts <- dplyr::relocate(start_pts, COMID, position, source, geometry)
+# 
+# pts <- dplyr::bind_rows( end_pts, start_pts )
+# 
+# orig_fline <-  dplyr::filter(flines, source == "original")
+# 
+# orig_end <-  dplyr::filter(end_pts, source == "original", position == "end")
+# 
+# 
+# new_fline <-  dplyr::filter(flines, source == "update")
+# 
+# new_end <-   dplyr::filter(end_pts, source == "update", position == "end")
+# 
+# mapview::mapview(orig_fline, color = "blue") + mapview::mapview(orig_end, col.regions = "blue") +
+#   mapview::mapview(new_fline, color = "red") + mapview::mapview(new_end, col.regions = "red")

@@ -1,13 +1,15 @@
 ---
 title: "04 - Catchment"
 author: "Angus Watters"
-date: "2023-04-20"
+date: "2023-05-25"
 output:
   html_document:
     toc: true
 ---
 
 ```{r setup, include=FALSE}
+# This catchment processing script takes in a set of NHDPlus catchment polygons and process them to remove any internal boundaries and small island polygons. It then returns a cleaned sf dataframe with only single valid polygon geometries. 
+
 library(patchwork)
 library(ggmapinset)
 library(ggplot2)
@@ -19,19 +21,28 @@ library(rmapshaper)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(warn = -1, verbose = FALSE)
-source("../nhdplusv2/utils.R")
+source("../workflow/nhdplusv2/utils.R")
 
-file <- "D:/nhdplusv2_reference_features/02_Catchments/NHDPlus06.gpkg"
+file <- "D:/reference_geometries/02_Catchments/NHDPlus06.gpkg"
+# outs <- "D:/reference_geometries/03_simplified_catchments/catchments_06.gpkg"
 
 # ggplot theme 
 thm <- 
   ggplot2::theme_bw() +
   ggplot2::theme(
     plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
-    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5)
+    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5),
+    legend.text = ggplot2::element_text(size = 12),
+    legend.title = ggplot2::element_text(face = "bold", size = 12),
+    plot.caption      = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+    legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted"),
+    legend.spacing.y  = unit(0.3, 'cm')
     # plot.title = ggplot2::element_text(size = 16, face = "bold"),
     # plot.subtitle =  ggplot2::element_text(size = 14)
   )
+
+  # ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+
 group_colors <- c(
   "19485688" = "#00BA38",
   # "19750735" = "gold",
@@ -52,7 +63,6 @@ pt <-   data.frame(lng = lng,
   sf::st_as_sf( coords = c("lng", "lat"), crs = 4326) %>% 
   sf::st_geometry() %>% 
   sf::st_centroid()
-# This catchment processing script takes in a set of sf polygons called "catchments" and process them to remove any internal boundaries and small island polygons. It then returns a cleaned sf dataframe with only single valid polygon geometries. The function has several parameters, including the catchment ID, a CRS value, a grid value for simplification, and a system variable that controls whether the Mapshaper library is used or not. The function performs a quick validity check on the input geometries, then casts the multipolygons to polygons and adds a feature count column. If any geometries fail the validity check or are not of the correct geometry type, the function separates the polygons with multiple feature counts and dissolves and explodes them if necessary. The area is recalculated for the parts, and the biggest parts in each catchment are selected, with the smallest ones removed. The intersection between the big and small parts is computed, and the resulting linestrings are used to create a new sf dataframe with only valid polygons. Finally, the cleaned sf dataframe is simplified using the grid value and returned.
 ```
 
 # Read in catchments data
@@ -74,7 +84,7 @@ table_data <- data.frame(
 knitr::kable(table_data, format = "markdown", col.names = c("Geometry", "Count", "Feature IDs"))
 ```
 
-However in reality, each catchment should only be represented by a single continguous polygon geometry. So what happens if we try to cast all of our MULTIPOLYGONs to POLYGON geometries?
+However in reality, each catchment should only be represented by a *single* continguous polygon geometry. So what happens if we try to cast all of our MULTIPOLYGONs to POLYGON geometries?
 
 ```{r, eval = TRUE, echo = TRUE}
 polys <- 
@@ -123,7 +133,7 @@ cat_plot <- ggplot2::ggplot() +
 ggplot2::ggsave(
   cat_plot,
   # filename = "catchments_highlight2.png",
-  filename = "../img/catchments_highlight2.png",
+  filename = "../man/figures/catchments_highlight.png",
   height = 5,
   width = 12,
   scale = 1
@@ -131,7 +141,7 @@ ggplot2::ggsave(
 ```
 
 <center>
-![VPU 6 with inset map focused on area of interest](../img/catchments_highlight2.png)
+![NHDPlusv2 catchment geometries (VPU 6) with inset map focused on area of interest](../man/figures/catchments_highlight.png)
 </center>
 
 <br>
@@ -157,18 +167,19 @@ aoi_plot <-
   ggplot2::labs(
     fill = "Feature ID"
   ) +
-  thm + 
-  ggplot2::theme(
-  # legend.position = "bottom",
-  legend.justification=c(-0.25,-0.5), 
-  legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
-aoi_plot
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  # ggplot2::theme(
+  # # legend.position = "bottom",
+  # legend.justification=c(-0.25,-0.5), 
+  # legend.position=c(0,0),
+  # legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
+  #  # legend.spacing.x = unit(0.5, "cm")
+  # )
+# aoi_plot
 ggplot2::ggsave(
   aoi_plot,
-  filename = "../img/aoi_intro_plot.png",
+  filename = "../man/figures/aoi_intro_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -176,7 +187,7 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Area of Interest](../img/aoi_intro_plot.png)
+![Area of Interest](../man/figures/aoi_intro_plot.png)
 </center>
 
 <br>
@@ -216,7 +227,7 @@ catchments = lwgeom::st_snap_to_grid(
 #   thm
 # ggplot2::ggsave(
 #   no_snap_plot,
-#   filename = "../img/pre_grid_snap.png",
+#   filename = "../man/figures/pre_grid_snap.png",
 #   height = 12,
 #   width = 14, 
 #   scale = 1
@@ -231,7 +242,7 @@ catchments = lwgeom::st_snap_to_grid(
 # 
 # ggplot2::ggsave(
 #   snap_plot,
-#   filename = "../img/post_grid_snap.png",
+#   filename = "../man/figures/post_grid_snap.png",
 #   height = 12,
 #   width = 14,
 #   scale = 1
@@ -248,7 +259,7 @@ The first step is to cast all of the NHDPlus multipolygon geomtries into standal
 polygons <- 
   catchments %>% 
   sf::st_cast("POLYGON") %>% 
-  fast_validity_check() %>% 
+  hydrofab:::fast_validity_check() %>% 
   dplyr::add_count(featureid) %>% 
   dplyr::mutate(
     areasqkm = hydrofab::add_areasqkm(.),
@@ -304,9 +315,9 @@ unique_catchments <-
   ggplot2::ggplot() +
   ggplot2::geom_sf(ggplot2::aes(fill = tmpID)) + 
   ggplot2::theme_bw()
-
-unique_catchments + unique_polys
-unique_catchments
+# 
+# unique_catchments + unique_polys
+# unique_catchments
 ```
 
 <br>
@@ -315,7 +326,7 @@ unique_catchments
 # 2. Separates catchments into main and small parts
 Next step is to isolate the polygons that are made up of multiple features. We then dissolve any internal boundaries, recalculate our areas and assign a new temporary ID `(newID)` variable that we will use later on. 
 
-```{r}
+```{r, eval = TRUE, echo = TRUE}
 # separate polygons with more than 1 feature counts
 extra_parts = 
   polygons %>% 
@@ -344,13 +355,14 @@ extra_parts_plot <-
   ggplot2::labs(
     fill = "Feature ID"
   ) +
-  thm
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
-extra_parts_plot
+# extra_parts_plot
 
 ggplot2::ggsave(
   extra_parts_plot,
-  filename = "../img/extra_parts_plot.png",
+  filename = "../man/figures/extra_parts_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -358,7 +370,7 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Problematic Catchment Geometries](../img/extra_parts_plot.png)
+![Problematic Catchment Geometries](../man/figures/extra_parts_plot.png)
 </center>
 
 <br>
@@ -390,22 +402,23 @@ main_parts
 <br>
 
 ```{r, eval = FALSE, echo = FALSE}
-main_parts_plot <- 
-  main_parts %>% 
-  dplyr::mutate(
-    featureid = as.character(featureid)
-  ) %>% 
-  ggplot2::ggplot() +
-  ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
-  ggplot2::scale_fill_manual(values = group_colors) + 
-  ggplot2::labs(
-    fill = "Feature ID"
-  ) +
-  thm
-
+# main_parts_plot <-
+#   main_parts %>%
+#   dplyr::mutate(
+#     featureid = as.character(featureid)
+#   ) %>%
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(ggplot2::aes(fill = featureid)) +
+#   ggplot2::scale_fill_manual(values = group_colors) +
+#   ggplot2::labs(
+#     fill = "Feature ID"
+#   ) +
+#   thm +
+#   ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+# 
 # ggplot2::ggsave(
-#   extra_parts_plot,
-#   filename = "../img/extra_parts_plot.png",
+#   main_parts_plot,
+#   filename = "../man/figures/main_parts_plot.png",
 #   height = 6,
 #   width = 10,
 #   scale = 1
@@ -419,7 +432,6 @@ We'll find the small polygons by filtering down our `extra_parts` to the parts t
 ```{r, eval = TRUE, echo = TRUE}
 small_parts <-
   extra_parts %>%
-  # group_by(featureid) %>% 
   dplyr::filter(newID != main_parts$newID) %>% 
   rmapshaper::ms_dissolve("featureid", copy_fields = names(.)) %>%
   rmapshaper::ms_explode() %>%
@@ -436,7 +448,6 @@ small_parts
 
 discon_small_plot <- 
   extra_parts %>%
-  # group_by(featureid) %>% 
   filter(newID != main_parts$newID) %>% 
   ms_dissolve("featureid", copy_fields = names(.)) %>%
   ms_explode() %>%
@@ -455,11 +466,12 @@ discon_small_plot <-
     fill  = "Feature ID"
     # subtitle = ""
   ) + 
-  thm
-
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+# discon_small_plot
 ggplot2::ggsave(
   discon_small_plot,
-  filename = "../img/discontinues_small_parts_plot.png",
+  filename = "../man/figures/discontinues_small_parts_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -467,7 +479,7 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Discontinuous small geometries](../img/discontinues_small_parts_plot.png)
+![Discontinuous small geometries](../man/figures/discontinues_small_parts_plot.png)
 </center>
 
 Then lets bind our `main_parts` polygons with the rest of the single polygon features in our original `polygons` dataset. This gives us a complete set of the main catchment polygons.
@@ -492,11 +504,12 @@ main_parts_plot <-
     fill  = "Feature ID"
     # subtitle = ""
   ) + 
-  thm
+  thm + 
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   main_parts_plot,
-  filename = "../img/main_parts_plot.png",
+  filename = "../man/figures/main_parts_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -505,10 +518,10 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Main catchment geometries after removing small discontinuous geometries](../img/main_parts_plot.png)
+![Main catchment geometries after removing small discontinuous geometries](../man/figures/main_parts_plot.png)
 </center>
 
-To summarize where we are at. We have 2 groups of data. The `main_parts` group  which is our large polygon geometries, and the `small_parts` group, which contains all small, discontinuous polygons that need to be rejoined into an appropriate catchment in our `main_parts` dataset.
+To summarize where we are at. We have 2 groups of data. The `main_parts` group which is our large polygon geometries, and the `small_parts` group, which contains all small, discontinuous polygons that need to be rejoined into an appropriate catchment in our `main_parts` dataset.
 
 We now have 2 datasets: 
 
@@ -520,10 +533,10 @@ We now have 2 datasets:
 tmap <- 
   main_parts %>% 
   dplyr::mutate(
-    type = "main_parts"
+    type = "Main parts"
   ) %>% 
   dplyr::bind_rows(
-    dplyr::mutate(small_parts, type = "small_parts")
+    dplyr::mutate(small_parts, type = "Small parts")
   ) %>% 
   sf::st_transform(4326)
 
@@ -537,7 +550,8 @@ sep_parts_plot <-
     fill  = ""
     # subtitle = ""
   ) + 
-  thm 
+  thm + 
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
   # ggplot2::theme(
   #   # legend.position = "bottom",
     # legend.justification=c(-0.25,-0.4),
@@ -548,7 +562,7 @@ sep_parts_plot <-
 # sep_parts_plot
 ggplot2::ggsave(
   sep_parts_plot,
-  filename = "../img/seperated_parts_plot.png",
+  filename = "../man/figures/seperated_parts_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -556,7 +570,7 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Catchments seperated into main (red) and secondary (blue) parts](../img/seperated_parts_plot.png)
+![Catchments seperated into main (red) and secondary (blue) parts](../man/figures/seperated_parts_plot.png)
 </center>
 
 <br>
@@ -595,27 +609,28 @@ ints =
   dplyr::group_by(.data$newID) %>%
   dplyr::slice_max(.data$l, with_ties = FALSE) %>%
   dplyr::ungroup()
-
-```
-
-```{r, eval = FALSE, echo = FALSE}
-out %>% 
-  dplyr::mutate(
-    type = "intersections"
-  ) %>% 
-  dplyr::bind_rows(
-    dplyr::mutate(small_parts, type = "small_parts")
-  ) %>% 
-  ggplot2::ggplot() +
-  ggplot2::geom_sf(ggplot2::aes(fill = type)) 
 ```
 
 ```{r, eval = FALSE, echo = FALSE}
 # mapview::mapview(main_parts, col.region = "red") + mapview::mapview(small_parts, col.region = "green") + ints + out 
+# out %>% 
+#   dplyr::mutate(
+#     type = "intersections"
+#   ) %>% 
+#   dplyr::bind_rows(
+#     dplyr::mutate(small_parts, type = "small_parts")
+#   ) %>% 
+#   ggplot2::ggplot() +
+#   ggplot2::geom_sf(ggplot2::aes(fill = type)) 
 ```
 
 This provides the `featureid` of the `main_parts` polygon that shares the longest border with the `small_parts` polygons, and thus identifying the catchment that the `small_parts` polygons should dissolve into.
 
+<center>
+![Cleaning process](../man/figures/cleaning_catchments.gif)
+</center>
+
+<br>
 <br>
 <br>
 
@@ -650,7 +665,7 @@ in_cat <-
       "featureid")
   ) %>%
   dplyr::mutate(tmpID = 1:dplyr::n()) %>%
-  fast_validity_check()
+  hydrofab:::fast_validity_check()
 ```
 
 ```{r, eval = FALSE, echo = FALSE}
@@ -665,7 +680,8 @@ final_plot <-
   ggplot2::labs(
     fill  = "Feature ID"
   ) + 
-  thm 
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
   # ggplot2::theme(
   #   legend.justification = c(-0.25,-0.4), 
   #   legend.position      = c(0,0),
@@ -675,7 +691,7 @@ final_plot <-
 # sep_parts_plot
 ggplot2::ggsave(
   final_plot,
-  filename = "../img/final_catchment_union_plot.png",
+  filename = "../man/figures/final_catchment_union_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -685,15 +701,13 @@ ggplot2::ggsave(
 ```
 
 <center>
-![Final unionified catchment geometries](../img/final_catchment_union_plot.png)
+![Final unified catchment geometries](../man/figures/final_catchment_union_plot.png)
 </center>
 
-
-
 ```{r, eval = FALSE, echo = FALSE}
-# ----------------------------------------------
+# **********************************************
 # ---- CODE FOR MAKING CLEAN CATCHMENTS GIF ----
-# ----------------------------------------------
+# **********************************************
 
 start_poly <-
   polygons %>% 
@@ -708,26 +722,28 @@ start_poly <-
     caption = "1 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  # ggplot2::theme(
+  # legend.text = ggplot2::element_text(size = 12),
+  # legend.title = ggplot2::element_text(face = "bold", size = 12),
+  # plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+  # # legend.justification=c(-0.7,-1),
+  # # legend.position=c(0,0),
+  # legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted"),
+  #  # legend.spacing.x = unit(0.5, "cm")
+  #   legend.spacing.y = unit(0.5, 'cm')
+  # ) +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   start_poly,
-  filename = "../img/01_catchment_gif_plot.png",
+  filename = "../man/figures/01_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
 )
 
 highlight_poly <-
-polygons %>% 
+  polygons %>% 
   dplyr::mutate(
     featureid = as.character(featureid)
   ) %>%
@@ -740,19 +756,11 @@ polygons %>%
     caption = "2 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   highlight_poly,
-  filename = "../img/02_catchment_gif_plot.png",
+  filename = "../man/figures/02_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -786,18 +794,11 @@ small_highlight <-
     caption = "3 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+
 ggplot2::ggsave(
   small_highlight,
-  filename = "../img/03_catchment_gif_plot.png",
+  filename = "../man/figures/03_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -846,18 +847,11 @@ int_line_plot <-
     caption = "4 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+
 ggplot2::ggsave(
   int_line_plot,
-  filename = "../img/04_catchment_gif_plot.png",
+  filename = "../man/figures/04_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -905,26 +899,18 @@ big_small_plot <-
     caption = "5 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 # 19485688
 ggplot2::ggsave(
   big_small_plot,
-  filename = "../img/05_catchment_gif_plot.png",
+  filename = "../man/figures/05_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
 )
 
 change_plot <-
-polygons %>% 
+  polygons %>% 
   dplyr::mutate(
     featureid = as.character(featureid)
   ) %>%
@@ -965,19 +951,11 @@ polygons %>%
     caption = "6 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   change_plot,
-  filename = "../img/06_catchment_gif_plot.png",
+  filename = "../man/figures/06_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -1011,19 +989,11 @@ third_to_final_plot <-
     caption = "7 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   third_to_final_plot,
-  filename = "../img/07_catchment_gif_plot.png",
+  filename = "../man/figures/07_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -1058,19 +1028,11 @@ second_to_final <-
     caption = "8 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   second_to_final,
-  filename = "../img/08_catchment_gif_plot.png",
+  filename = "../man/figures/08_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
@@ -1089,28 +1051,25 @@ final_gif_plot <-
     caption = "9 / 9"
   ) +
   thm + 
-  ggplot2::theme(
-  legend.text = ggplot2::element_text(size = 12),
-  legend.title = ggplot2::element_text(face = "bold", size = 12),
-  plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-  # legend.justification=c(-0.7,-1),
-  # legend.position=c(0,0),
-  legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted")
-   # legend.spacing.x = unit(0.5, "cm")
-  )
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   final_gif_plot,
-  filename = "../img/09_catchment_gif_plot.png",
+  filename = "../man/figures/09_catchment_gif_plot.png",
   height = 6,
   width = 10,
   scale = 1
 )
 
+# # RUN TO MAKE GIF FROM PNGs saved in above code
 # library(gifski)
-# png_files <- list.files("../img/", pattern = "_catchment_gif_plot", full.names = TRUE)
-# 
-# gifski::gifski(png_files, gif_file = "../gif/cleaning_catchments.gif", width = 1700, height = 1000, delay = 1.5)
+# png_files <- list.files("../man/figures/", pattern = "_catchment_gif_plot", full.names = TRUE)
+# gifski::gifski(png_files,
+#                gif_file = "../man/figures/cleaning_catchments.gif",
+#                width = 1700,
+#                height = 1000,
+#                delay = 1.75
+#                )
 ```
 
 

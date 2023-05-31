@@ -1,7 +1,7 @@
 ---
 title: "02 - Waterbodies"
 author: "Angus Watters"
-date: "2023-05-11"
+date: "2023-05-31"
 output:
   html_document:
     toc: true
@@ -17,10 +17,10 @@ library(hydrofab)
 
 knitr::opts_chunk$set(echo = TRUE)
 options(warn = -1, verbose = FALSE)
-source("../nhdplusv2/utils.R")
+source("../workflow/nhdplusv2/utils.R")
 
 # path to waterbodies dataset for markdown examples
-file <- "D:/nhdplusv2_reference_features/02_Waterbodies/NHDPlus06.gpkg"
+file <- "D:/reference_geometries/02_Waterbodies/NHDPlus06.gpkg"
 
 # inset map point
 lng = c(-84.17691)
@@ -33,13 +33,27 @@ pt <-   data.frame(lng = lng,
   sf::st_geometry() %>% 
   sf::st_centroid()
 
-# ggplot theme 
+# # ggplot theme 
+# thm <- 
+#   ggplot2::theme_bw() +
+#   ggplot2::theme(
+#     plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
+#     plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5)
+#   )
+# # ggplot theme 
 thm <- 
   ggplot2::theme_bw() +
   ggplot2::theme(
     plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
-    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5)
+    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5),
+    legend.text = ggplot2::element_text(size = 12),
+    legend.title = ggplot2::element_text(face = "bold", size = 12),
+    plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
+    legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted"),
+    legend.spacing.y = unit(0.3, 'cm')
   )
+
+  # ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 group_colors <- c(
   "19485688" = "#00BA38",
@@ -109,72 +123,74 @@ clean_wbs
 <br>
 
 <center>
-![Clean and unclean Waterbodies](../gif/cleaning_waterbodies.gif)
+![Clean and unclean Waterbodies](../man/figures/cleaning_waterbodies.gif)
 </center>
 
 <br>
 
 ```{r, eval = FALSE, echo = FALSE}
-# clean_wbs2 <- 
-#   clean_wbs %>% 
-#   dplyr::mutate(
-#     area_sqkm = hydrofab::add_areasqkm(.)
-#     ) %>% 
-#   dplyr::group_by(GNIS_ID) %>% 
-#   dplyr::arrange(-area_sqkm, .by_group = T) %>% 
-#   dplyr::mutate(
-#     n          = 1:n(),
-#     poly_count = dplyr::case_when(
-#       is.na(GNIS_ID) ~ "Primary",
-#       n == 1 ~ "Primary",
-#       n != 1 & !is.na(GNIS_ID) ~ "Secondary"
-#     )
-#   ) 
-# wb_unclean <- 
-#   ggplot2::ggplot() +
-#   ggmapinset::geom_sf_inset(data = sf::st_transform(wb, 4326)) +
-#   ggmapinset::geom_inset_frame() +  
-#     ggplot2::labs(
-#     title = "UNCLEAN"
-#   ) + 
-#   ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt2,
-#                                                                  scale = 20,  
-#                                          translation = c(250, -110), 
-#                                          radius = 6)) + 
-#   thm
-# wb_unclean
-# wb_clean <- 
-#   ggplot2::ggplot() +
-#   ggmapinset::geom_sf_inset(data = sf::st_transform(clean_wbs, 4326)) +
-#   ggmapinset::geom_inset_frame() +  
-#   ggplot2::labs(
-#     title = "CLEAN"
-#   ) + 
-#   ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt2,
-#                                                                  scale = 20,  
-#                                            translation = c(250, -110), 
-#                                          radius = 6)) + 
-#   thm
+clean_wbs2 <-
+  clean_wbs %>%
+  dplyr::mutate(
+    area_sqkm = hydrofab::add_areasqkm(.)
+    ) %>%
+  dplyr::group_by(GNIS_ID) %>%
+  dplyr::arrange(-area_sqkm, .by_group = T) %>%
+  dplyr::mutate(
+    n          = 1:n(),
+    poly_count = dplyr::case_when(
+      is.na(GNIS_ID) ~ "Primary",
+      n == 1 ~ "Primary",
+      n != 1 & !is.na(GNIS_ID) ~ "Secondary"
+    )
+  )
+wb_unclean <-
+  ggplot2::ggplot() +
+  ggmapinset::geom_sf_inset(data = sf::st_transform(wb, 4326)) +
+  ggmapinset::geom_inset_frame() +
+    ggplot2::labs(
+    title = "UNCLEAN",
+    caption = "1 / 2"
+  ) +
+  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+                                                                 scale = 20,
+                                         translation = c(250, -110),
+                                         radius = 6)) +
+  thm
+wb_unclean
+wb_clean <-
+  ggplot2::ggplot() +
+  ggmapinset::geom_sf_inset(data = sf::st_transform(clean_wbs, 4326)) +
+  ggmapinset::geom_inset_frame() +
+  ggplot2::labs(
+    title = "CLEAN",
+    caption = "2 / 2"
+  ) +
+  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+                                                                 scale = 20,
+                                           translation = c(250, -110),
+                                         radius = 6)) +
+  thm
 
-# ggplot2::ggsave(
-#   plot = wb_unclean,
-#   filename = "../img/unclean_waterbodies.png",
-#   height = 8,
-#   width = 10,
-#   scale = 1
-# )
-# ggplot2::ggsave(
-#   plot = wb_clean,
-#   filename = "../img/clean_waterbodies.png",
-#   height = 8,
-#   width = 10,
-#   scale = 1
-# )
+ggplot2::ggsave(
+  plot = wb_unclean,
+  filename = "../man/figures/unclean_waterbodies.png",
+  height = 8,
+  width = 12,
+  scale = 1
+)
+ggplot2::ggsave(
+  plot = wb_clean,
+  filename = "../man/figures/clean_waterbodies.png",
+  height = 8,
+  width = 12,
+  scale = 1
+)
 # library(gifski)
 # list.files("../img/")
-# png_files <- list.files("../img/", pattern = "_waterbodies", full.names = TRUE)
-# 
-# gifski(rev(png_files), gif_file = "../gif/cleaning_waterbodies.gif", width = 1400, height = 1100, delay = 2)
+png_files <- list.files("../man/figures/", pattern = "clean_waterbodies", full.names = TRUE)
+
+gifski::gifski(rev(png_files), gif_file = "../man/figures/cleaning_waterbodies.gif", width = 1700, height = 1100, delay = 1.5)
 ```
 
 ```{r, eval = TRUE, echo=FALSE}
@@ -251,19 +267,20 @@ main_wb_plot <- ggplot2::ggplot() +
                                          scale = 18,  
                                          translation = c(240, -80), 
                                          radius = 7)) + 
-  thm
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   plot = main_wb_plot,
-  filename = "../img/multi_geom_wbs.png",
-  height = 5,
-  width = 10,
+  filename = "../man/figures/multi_geom_wbs.png",
+  height = 6,
+  width = 12,
   scale = 1
 )
 ```
 
 <center>
-![Highlighting GNIS IDs with multiple waterbody geometries (VPU 6)](../img/multi_geom_wbs.png)
+![Highlighting GNIS IDs with multiple waterbody geometries (VPU 6)](../man/figures/multi_geom_wbs.png)
 </center>
 
 <br>
@@ -284,19 +301,20 @@ gnisid_comids_plot <-
   # ggplot2::labs(
     # title = paste0("GNIS ID: 1008755") 
   # ) +
-  thm
+  thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   plot = gnisid_comids_plot,
-  filename = "../img/multi_comid_gnisid_wb.png",
+  filename = "../man/figures/multi_comid_gnisid_wb.png",
   height = 6,
-  width = 10,
+  width = 12,
   scale = 1
 )
 ```
 
 <center>
-![GNIS ID: 1008755 (VPU 6)](../img/multi_comid_gnisid_wb.png)
+![GNIS ID: 1008755 (VPU 6)](../man/figures/multi_comid_gnisid_wb.png)
 </center>
 
 <br>
@@ -349,27 +367,29 @@ union_gnisid_plot <-
     # fill = "COMID"
   ) +
   thm +
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  
   # guides(color = guide_legend(title.position = "top", title.hjust = 0.5, title.vjust = 0.5)) +
-  ggplot2::theme(
-    legend.position = "bottom",
-    # legend.box = "vertical",
-    legend.box.just = "center",
-    # legend.title.align = 0.5,
-    legend.title = element_text(size = 10),
-    legend.text = ggplot2::element_text(size = 8)
-  )
+  # ggplot2::theme(
+  #   legend.position = "bottom",
+  #   # legend.box = "vertical",
+  #   legend.box.just = "center",
+  #   # legend.title.align = 0.5,
+  #   legend.title = element_text(size = 10),
+  #   legend.text = ggplot2::element_text(size = 8)
+  # )
 
 ggplot2::ggsave(
   plot = union_gnisid_plot,
-  filename = "../img/single_comid_gnisid_wb.png",
+  filename = "../man/figures/single_comid_gnisid_wb.png",
   height = 6,
-  width = 10,
+  width = 12,
   scale = 1
 )
 ```
 
 <center>
-![GNIS ID: 1008755 (VPU 6)](../img/single_comid_gnisid_wb.png)
+![GNIS ID: 1008755 (VPU 6)](../man/figures/single_comid_gnisid_wb.png)
 </center>
 
 ```{r, eval = F, echo = F}
@@ -470,19 +490,20 @@ out_plot <-
                                          scale = 18,  
                                          translation = c(240, -80), 
                                          radius = 7)) + 
-  thm
+  thm + 
+  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 ggplot2::ggsave(
   plot = out_plot,
-  filename = "../img/output_wb.png",
+  filename = "../man/figures/output_wb.png",
   height = 6,
-  width = 10,
+  width = 12,
   scale = 1
 )
 ```
 
 <center>
-![Revised NHDPlusv2 waterbodies (VPU 6)](../img/output_wb.png)
+![Revised NHDPlusv2 waterbodies (VPU 6)](../man/figures/output_wb.png)
 </center>
 
 <br>
