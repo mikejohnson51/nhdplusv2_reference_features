@@ -28,8 +28,6 @@ for(i in 1:length(files)){
       message("Finished ", i, " of ", length(files))
 }
 
-
-
 # Rectify borders ---------------------------------------------------------
 
 for(i in 1:nrow(topos)){
