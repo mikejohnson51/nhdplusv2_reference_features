@@ -1,4 +1,4 @@
-source("workflow/config.R")
+source("workflow/nhdplusv2/config.R")
 
 epa = get_bucket_df(epa_bucket, max = Inf)
 
@@ -41,7 +41,7 @@ all_cats = all_cats %>%
   filter(!gpkg %in% list.files(catchments_dir, full.names = TRUE))
 
 if(nrow(all_cats) > 0){
-  calls = paste('ogr2ogr -f GPKG', all_cats$gpkg, all_cats$shp)
+  calls = paste('ogr2ogr -f GPKG -nlt MULTIPOLYGON', all_cats$gpkg, all_cats$shp)
 
   for(i in 1:length(calls)){
     system(calls[i])
@@ -56,7 +56,7 @@ snap = grep("_NHDSnapshot_", epa$Key, value =TRUE)
 all_snap = data.frame(
   key = snap,
   VPU = sapply(strsplit(snap, "_"), `[`, 3),
-  region = sapply(strsplit(v, "_"), `[`, 2),
+  region = sapply(strsplit(snap, "_"), `[`, 2),
   link = glue('https://{epa_bucket}.s3.amazonaws.com/{snap}')) %>%
   mutate(outfile = glue("{epa_download}NHDPlusSnapshot{VPU}.7z"),
          fl_shp  = glue("{epa_download}NHDPlus{region}/NHDPlus{VPU}/NHDSnapshot/Hydrography/NHDFlowline.shp"),
@@ -74,15 +74,16 @@ for(i in 1:nrow(all_snap)){
 
 ####
 
-all_snap = all_snap %>%
+all_snap <- 
+  all_snap %>%
   mutate(fl_gpkg = glue("{fl_dir}NHDPlus{VPU}.gpkg"),
          wb_gpkg = glue("{wb_dir}NHDPlus{VPU}.gpkg")) %>%
   filter(!wb_gpkg %in% list.files(wb_dir, full.names = TRUE))
 
 if(nrow(all_snap) > 0){
   calls = c(
-    paste('ogr2ogr -f GPKG', all_snap$wb_gpkg, all_snap$wb_shp),
-    paste('ogr2ogr -f GPKG', all_snap$fl_gpkg, all_snap$fl_shp)
+    paste('ogr2ogr -f GPKG -nlt MULTIPOLYGON', all_snap$wb_gpkg, all_snap$wb_shp),
+    paste('ogr2ogr -f GPKG -nlt MULTILINESTRING', all_snap$fl_gpkg, all_snap$fl_shp)
   )
 
   for(i in 1:length(calls)){
@@ -99,7 +100,7 @@ all_burn = data.frame(
   key = burn,
   VPU = sapply(strsplit(burn, "_"), `[`, 3),
   region = sapply(strsplit(burn, "_"), `[`, 2),
-  link = glue('https://{epa_bucket}.s3.amazonaws.com/{v}')) |>
+  link = glue('https://{epa_bucket}.s3.amazonaws.com/{burn}')) |>
   mutate(outfile = glue("{epa_download}NHDPlusBurnComponents{VPU}.7z"),
          ble_shp  = glue("{epa_download}NHDPlus{region}/NHDPlus{VPU}/NHDPlusBurnComponents/BurnAddLine.shp")) %>%
   filter(!ble_shp %in% list.files(epa_download, recursive  = TRUE, pattern = ".shp$"))
@@ -116,7 +117,7 @@ all_burn = all_burn %>%
   filter(!ble_gpkg %in% list.files(ble_dir, full.names = TRUE))
 
 if(nrow(all_burn) > 0){
-  calls = paste('ogr2ogr -f GPKG', all_burn$ble_gpkg, all_burn$ble_shp)
+  calls = paste('ogr2ogr -f GPKG -nlt MULTILINESTRING', all_burn$ble_gpkg, all_burn$ble_shp)
 
   for(i in 1:length(calls)){
     system(calls[i])
