@@ -32,6 +32,8 @@
 
 source('workflow/nhdplusv2/config.R')
 
+par = 3
+
 fl_paths  = list.files(fl_dir,  full.names = TRUE)
 ble_paths = list.files(ble_dir, full.names = TRUE)
 
@@ -52,7 +54,6 @@ tryCatch({
   vaa <- nhdplusTools::get_vaa()
 })
 
-par = 3
 
 # BLE geopackage file path
 output_file <- glue("{base_dir}/ble_events.gpkg")
@@ -219,7 +220,7 @@ for(i in 1:length(fl_paths)){
     stopCluster(cl)
     
     # check for errors based on try-error conditions
-    # identify the geometries that encountered errors during fix_flowdir() and store in "errors" df 
+    # identify the geometries that encountered errors during fix_flowdir() and store in "errors" 
     error_index <- sapply(new_geom, inherits, what = "try-error")
     
     # subset error geometries
