@@ -1,7 +1,5 @@
-library(sf)
-library(dplyr)
+source('workflow/nhdplusv2/config.R')
 
-vpus = nhdplusTools::vpu_boundaries
 dt = st_make_valid(vpus)
 
 x = as.data.frame(which(st_intersects(dt, sparse = FALSE), arr.ind = T))
@@ -17,4 +15,4 @@ do.call('rbind', vars)[!duplicated(vars),] |>
   filter(VPU1 != VPU2) |>
   mutate(VPU1 = dt$VPUID[VPU1],
          VPU2 = dt$VPUID[VPU2]) |>
-  write.csv("data/vpu_topology.csv", row.names = FALSE)
+  write.csv(vpu_topo_csv, row.names = FALSE)

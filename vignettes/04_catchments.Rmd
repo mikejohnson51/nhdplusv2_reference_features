@@ -8,7 +8,7 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-# This catchment processing script takes in a set of NHDPlus catchment polygons and process them to remove any internal boundaries and small island polygons. It then returns a cleaned sf dataframe with only single valid polygon geometries. 
+# This catchment processing script takes in a set of NHDPlus catchment polygons and process them to remove any internal boundaries and small island polygons. It then returns a cleaned sf data.frame with only single valid polygon geometries. 
 
 library(patchwork)
 library(ggmapinset)

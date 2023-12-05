@@ -3,10 +3,8 @@ source("workflow/nhdplusv2/config.R")
 epa = get_bucket_df(epa_bucket, max = Inf)
 
 #### New Attributes ------
-n = 'enhd_nhdplusatts.parquet'
-item_file_download(sb_id = '63cb311ed34e06fef14f40a3',
-                   names = n,
-                   destinations = glue("{base_dir}/{n}"))
+
+item_file_download(sb_id = '63cb311ed34e06fef14f40a3', names = n, destinations = enhd, overwrite_file = TRUE)
 
 # Catchments --------------------------------------------------------------
 

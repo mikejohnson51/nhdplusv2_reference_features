@@ -1,59 +1,46 @@
 ---
-title: "02 - Waterbodies"
-author: "Angus Watters"
-date: "2023-05-31"
-output:
-  html_document:
-    toc: true
+title: "Waterbodies"
+description: |
+  "Correcting Waterbody Representation"
+author:
+  - name: "Angus Watters"
+    url: https://github.com/anguswg-ucsb
+    affiliation: Lynker, NOAA-Affiliate
+    affiliation_url: https://lynker.com
+  - name: "Mike Johnson"
+    url: https://github.com/mikejohnson51
+    affiliation: Lynker, NOAA-Affiliate
+    affiliation_url: https://lynker.com
+output: distill::distill_article
 ---
 
 ```{r setup, include=FALSE}
-library(ggmapinset)
-library(sf)
-library(ggplot2)
-library(dplyr)
-library(sfheaders)
-library(hydrofab)
+pacman::p_load(ggmapinset, gifski, sf, ggplot2, dplyr, sfheaders, hydrofab )
 
 knitr::opts_chunk$set(echo = TRUE)
 options(warn = -1, verbose = FALSE)
 source("../workflow/nhdplusv2/utils.R")
 
-# path to waterbodies dataset for markdown examples
-file <- "D:/reference_geometries/02_Waterbodies/NHDPlus06.gpkg"
-
 # inset map point
 lng = c(-84.17691)
 lat = c(35.15163)
 
-pt <-   data.frame(lng = lng, 
-                   lat = lat
-                   ) %>% 
-  sf::st_as_sf( coords = c("lng", "lat"), crs = 4326) %>% 
-  sf::st_geometry() %>% 
-  sf::st_centroid()
+pt <- data.frame(lng = lng, lat = lat ) %>% 
+  st_as_sf(coords = c("lng", "lat"), crs = 4326) %>% 
+  st_geometry() %>% 
+  st_centroid()
 
-# # ggplot theme 
-# thm <- 
-#   ggplot2::theme_bw() +
-#   ggplot2::theme(
-#     plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
-#     plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5)
-#   )
-# # ggplot theme 
 thm <- 
-  ggplot2::theme_bw() +
-  ggplot2::theme(
-    plot.title = ggplot2::element_text(size = 16, face = "bold", hjust = 0.5),
-    plot.subtitle =  ggplot2::element_text(size = 14, hjust = 0.5),
-    legend.text = ggplot2::element_text(size = 12),
-    legend.title = ggplot2::element_text(face = "bold", size = 12),
-    plot.caption = ggplot2::element_text(size = 12, face="bold", hjust = 0.5),
-    legend.background = ggplot2::element_rect(fill="transparent", size=.5, linetype="dotted"),
+  theme_bw() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold", hjust = 0.5),
+    plot.subtitle =  element_text(size = 14, hjust = 0.5),
+    legend.text = element_text(size = 12),
+    legend.title = element_text(face = "bold", size = 12),
+    plot.caption = element_text(size = 12, face="bold", hjust = 0.5),
+    legend.background = element_rect(fill="transparent", linewidth=.5, linetype="dotted"),
     legend.spacing.y = unit(0.3, 'cm')
   )
-
-  # ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
 
 group_colors <- c(
   "19485688" = "#00BA38",
@@ -62,63 +49,47 @@ group_colors <- c(
   )
 ```
 
-Code reads in geopackage (gpkg) files located in a directory specified by the variable `wb_dir`. It then performs a series of spatial operations on each file, specifically for water body features, and outputs the resulting data to new ".gpkg" files in a specified reference directory `reference_dir`.
+This code reads in a waterbody layer from a geopackage files located in a directory specified by the variable `wb_dir`. It then performs a series of spatial operations on each file, specifically for water body features, and outputs the resulting data to new ".gpkg" files in a specified reference directory `reference_dir`.
 
 The loop in the code iterates through each ".gpkg" file in `wb_dir` and performs the following operations on each file:
 
 # 1. Read in the waterbody data (`wb`)
 
-We read in our waterbodies data. The data is made up of 1606 polygon geometries .
+We read in our waterbodies data. The data is made up of 1606 polygon geometries.
+
 ```{r}
 # Step 7: Read in the water body data from the current file as an sf object
-wb = read_sf(file)
-
-wb
+(wb = read_sf("../data/example.gpkg", "waterbodies"))
 ```
-
-```{r, eval = TRUE, echo = FALSE}
-table(sf::st_geometry_type(wb))
-```
-
-<br>
-<br>
 
 # 2. Drop, rename, and reattach geometries (`tmp`)
 
-We want to get rid of Z/M dimensions from our features and cleanup the column names.
+We first get rid of Z/M dimensions from our features and cleanup the column names.
+
 ```{r, eval = TRUE, echo = TRUE}
 # Drop the geometry column and rename column names to upper case
 tmp = st_drop_geometry(wb)
 names(tmp) <- toupper(names(tmp))
 
 # drop Z/M dimensions and bring back original geometry
-wb = st_zm(
-      st_as_sf(
-        cbind(tmp, st_geometry(wb))
-        )
-      )
+wb = st_zm(st_as_sf(cbind(tmp, st_geometry(wb))))
 ```
 
-<br>
-<br>
 
 # 3. Clean and dissolve (`clean_wbs`)
-Next thing we do is, union polygons by the attribute `COMID` and transform to the coordinate reference system with EPSG 5070.
+
+Next we union polygons by the `COMID` attribute and project to EPSG 5070.
+
 We remove holes from the polygons and join with the original water body data based on the `COMID` attribute
 
 ```{r, eval = T, echo = T}
-clean_wbs =
-  wb %>% 
-  union_polygons("COMID") %>%
+(clean_wbs = 
+  union_polygons(wb, "COMID") %>%
   st_transform(5070) %>%
   sf_remove_holes() %>%
-  left_join(
-    st_drop_geometry(wb), 
-    by = "COMID"
-    ) %>%
-  select(GNIS_ID, GNIS_NAME, COMID, FTYPE)
+  left_join(st_drop_geometry(wb), by = "COMID") %>%
+  select(GNIS_ID, GNIS_NAME, COMID, FTYPE))
 
-clean_wbs
 ```
 <br>
 
@@ -130,63 +101,62 @@ clean_wbs
 
 ```{r, eval = FALSE, echo = FALSE}
 clean_wbs2 <-
-  clean_wbs %>%
-  dplyr::mutate(
-    area_sqkm = hydrofab::add_areasqkm(.)
-    ) %>%
-  dplyr::group_by(GNIS_ID) %>%
-  dplyr::arrange(-area_sqkm, .by_group = T) %>%
-  dplyr::mutate(
+  mutate(clean_wbs, area_sqkm = hydrofab::add_areasqkm(.)) %>%
+  group_by(GNIS_ID) %>%
+  arrange(-area_sqkm, .by_group = T) %>%
+  mutate(
     n          = 1:n(),
-    poly_count = dplyr::case_when(
+    poly_count = case_when(
       is.na(GNIS_ID) ~ "Primary",
       n == 1 ~ "Primary",
       n != 1 & !is.na(GNIS_ID) ~ "Secondary"
     )
   )
+
 wb_unclean <-
-  ggplot2::ggplot() +
-  ggmapinset::geom_sf_inset(data = sf::st_transform(wb, 4326)) +
-  ggmapinset::geom_inset_frame() +
-    ggplot2::labs(
+  ggplot() +
+  geom_sf_inset(data = st_transform(wb, 4326)) +
+  geom_inset_frame() +
+    labs(
     title = "UNCLEAN",
     caption = "1 / 2"
   ) +
-  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
-                                                                 scale = 20,
+  coord_sf_inset(inset = configure_inset(centre = pt,
+                                         scale = 20,
                                          translation = c(250, -110),
                                          radius = 6)) +
   thm
-wb_unclean
+
+
 wb_clean <-
-  ggplot2::ggplot() +
-  ggmapinset::geom_sf_inset(data = sf::st_transform(clean_wbs, 4326)) +
-  ggmapinset::geom_inset_frame() +
-  ggplot2::labs(
+  ggplot() +
+  geom_sf_inset(data = st_transform(clean_wbs, 4326)) +
+  geom_inset_frame() +
+  labs(
     title = "CLEAN",
     caption = "2 / 2"
   ) +
-  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+  coord_sf_inset(inset = configure_inset(centre = pt,
                                                                  scale = 20,
                                            translation = c(250, -110),
                                          radius = 6)) +
   thm
 
-ggplot2::ggsave(
+ggsave(
   plot = wb_unclean,
   filename = "../man/figures/unclean_waterbodies.png",
   height = 8,
   width = 12,
   scale = 1
 )
-ggplot2::ggsave(
+ggsave(
   plot = wb_clean,
   filename = "../man/figures/clean_waterbodies.png",
   height = 8,
   width = 12,
   scale = 1
 )
-# library(gifski)
+# 
 # list.files("../img/")
 png_files <- list.files("../man/figures/", pattern = "clean_waterbodies", full.names = TRUE)
 
@@ -194,14 +164,15 @@ gifski::gifski(rev(png_files), gif_file = "../man/figures/cleaning_waterbodies.g
 ```
 
 ```{r, eval = TRUE, echo=FALSE}
-table(sf::st_geometry_type(clean_wbs))
+table(st_geometry_type(clean_wbs))
 ```
 
 <br>
 <br>
 
 # 4. Seperate waterbodies with  missing  GNIS IDs
-We now want to seperate waterbodies into 2 groups-- waterbodies with missing data and waterbodies without missing data.
+
+We now seperate waterbodies into 2 groups-- waterbodies with GNIS information and waterbodies without GNIS information.
 
 ```{r, eval = TRUE, echo=TRUE}
 # Filter rows where GNIS_NAME is NA
@@ -217,7 +188,6 @@ nomissing_wb =
   mutate(area_sqkm = add_areasqkm(.))
 ```
 
-<br>
 
 If we find the number of unique COMIDs in our `nomissing_wb` dataset and compare it to the number of unique GNIS IDs, we can see that we have several GNIS IDs that are made up of multiple COMIDs.
 
@@ -232,9 +202,6 @@ table_data <- data.frame(
 knitr::kable(table_data, format = "markdown", col.names = c("ID", "Unique count"))
 ```
 
-<br>
-<br>
-
 # 5. Resolve multilple COMIDs per GNIS ID
 
 If we look closely at our waterbody polygons, we'll see that some GNIS IDs contain multiple, attached polygons.
@@ -242,35 +209,35 @@ If we look closely at our waterbody polygons, we'll see that some GNIS IDs conta
 ```{r, eval = FALSE, echo = FALSE}
 wb2 <- 
   wb %>% 
-  dplyr::group_by(GNIS_ID) %>% 
-  dplyr::arrange(-AREASQKM, .by_group = T) %>% 
-  dplyr::mutate(
-    n          = 1:dplyr::n(),
-    poly_count = dplyr::case_when(
+  group_by(GNIS_ID) %>% 
+  arrange(-AREASQKM, .by_group = T) %>% 
+  mutate(
+    n          = 1:n(),
+    poly_count = case_when(
       is.na(GNIS_ID) ~ "Primary",
       n == 1 ~ "Primary",
       n != 1 & !is.na(GNIS_ID) ~ "Secondary"
     )
   ) 
 
-main_wb_plot <- ggplot2::ggplot() +
+main_wb_plot <- ggplot() +
 # replace sf layers with their `_inset` versions
-  ggmapinset::geom_sf_inset(data = sf::st_transform(wb2, 4326), ggplot2::aes(fill = poly_count ) ) +
-  ggplot2::labs(
+  geom_sf_inset(data = st_transform(wb2, 4326), aes(fill = poly_count ) ) +
+  labs(
     # title = "VPU 06 Waterbodies",
     # subtitle = 'GNIS IDs with multiple waterbody geometries',
     fill  = "Polygon"
   ) +
   # add the inset frame (the two circles with the connecting lines)
-  ggmapinset::geom_inset_frame() +  
-  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+  geom_inset_frame() +  
+  coord_sf_inset(inset = configure_inset(centre = pt,
                                          scale = 18,  
                                          translation = c(240, -80), 
                                          radius = 7)) + 
   thm +
-  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  guides(fill = guide_legend(byrow = TRUE))
 
-ggplot2::ggsave(
+ggsave(
   plot = main_wb_plot,
   filename = "../man/figures/multi_geom_wbs.png",
   height = 6,
@@ -290,21 +257,21 @@ Our goal here is to dissolve GNIS ID waterbodies with multiple polygons, into si
 ```{r, eval = FALSE, echo = FALSE, fig.align='center'}
 gnisid_comids_plot <- 
   nomissing_wb %>% 
-  dplyr::filter(GNIS_ID == "1008755") %>% 
-  sf::st_transform(4326) %>% 
-  dplyr::mutate(
+  filter(GNIS_ID == "1008755") %>% 
+  st_transform(4326) %>% 
+  mutate(
     # num = 1:n()
     COMID = as.character(COMID)
     ) %>%
-  ggplot2::ggplot() +
-  ggplot2::geom_sf(ggplot2::aes(fill = COMID)) + 
-  # ggplot2::labs(
+  ggplot() +
+  geom_sf(aes(fill = COMID)) + 
+  # labs(
     # title = paste0("GNIS ID: 1008755") 
   # ) +
   thm +
-  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  guides(fill = guide_legend(byrow = TRUE))
 
-ggplot2::ggsave(
+ggsave(
   plot = gnisid_comids_plot,
   filename = "../man/figures/multi_comid_gnisid_wb.png",
   height = 6,
@@ -327,59 +294,59 @@ In this example, after we have joined out unioned shape with our original datase
 
 ```{r, eval = T, echo = T}
 nomissing_wb %>% 
-  dplyr::filter(GNIS_ID == "1008755") %>% 
+  filter(GNIS_ID == "1008755") %>% 
   hydrofab::union_polygons("GNIS_ID") %>% 
-  dplyr::left_join(
-      sf::st_drop_geometry(
-        dplyr::filter(nomissing_wb, GNIS_ID == "1008755") 
+  left_join(
+      st_drop_geometry(
+        filter(nomissing_wb, GNIS_ID == "1008755") 
         ), 
       by = "GNIS_ID"
     ) %>%
-    dplyr::group_by(GNIS_ID) %>%
-    dplyr::mutate(
+    group_by(GNIS_ID) %>%
+    mutate(
       member_comid = paste(COMID, collapse = ",")
       ) %>% 
-    dplyr::slice_max(area_sqkm) %>%
-    dplyr::ungroup()
+    slice_max(area_sqkm) %>%
+    ungroup()
 ```
 
 ```{r, eval = FALSE, echo = FALSE, fig.align='center',out.extra='angle=90'}
 union_gnisid_plot <- 
   nomissing_wb %>% 
   # union_polygons("GNIS_ID") %>%
-  dplyr::filter(GNIS_ID == "1008755") %>% 
+  filter(GNIS_ID == "1008755") %>% 
   hydrofab::union_polygons("GNIS_ID") %>% 
-  dplyr::left_join(
-      sf::st_drop_geometry(
-        dplyr::filter(nomissing_wb, GNIS_ID == "1008755") 
+  left_join(
+      st_drop_geometry(
+        filter(nomissing_wb, GNIS_ID == "1008755") 
         ), 
       by = "GNIS_ID"
     ) %>%
-  dplyr::group_by(GNIS_ID) %>%
-  dplyr::mutate(member_comid = paste(COMID, collapse = ",")) %>% 
-  dplyr::slice_max(area_sqkm) %>%
-  dplyr::ungroup() %>% 
-  sf::st_transform(4326) %>% 
-  ggplot2::ggplot() +
-  ggplot2::geom_sf(ggplot2::aes(fill = member_comid)) + 
-  ggplot2::labs(
+  group_by(GNIS_ID) %>%
+  mutate(member_comid = paste(COMID, collapse = ",")) %>% 
+  slice_max(area_sqkm) %>%
+  ungroup() %>% 
+  st_transform(4326) %>% 
+  ggplot() +
+  geom_sf(aes(fill = member_comid)) + 
+  labs(
     # title = paste0("GNIS ID: 1008755")
     # fill = "COMID"
   ) +
   thm +
-  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  guides(fill = guide_legend(byrow = TRUE))
   
   # guides(color = guide_legend(title.position = "top", title.hjust = 0.5, title.vjust = 0.5)) +
-  # ggplot2::theme(
+  # theme(
   #   legend.position = "bottom",
   #   # legend.box = "vertical",
   #   legend.box.just = "center",
   #   # legend.title.align = 0.5,
   #   legend.title = element_text(size = 10),
-  #   legend.text = ggplot2::element_text(size = 8)
+  #   legend.text = element_text(size = 8)
   # )
 
-ggplot2::ggsave(
+ggsave(
   plot = union_gnisid_plot,
   filename = "../man/figures/single_comid_gnisid_wb.png",
   height = 6,
@@ -403,13 +370,13 @@ ggplot2::ggsave(
 #     )
 # tmp <-
 #   nomissing_wb %>% 
-#   dplyr::filter(GNIS_ID == "1008755")  
+#   filter(GNIS_ID == "1008755")  
 # # mapview::mapview(tmp[2, ])
 # mapview::mapview(tmp[2, ]) + tmp[1, ]
 #   # mapview::mapview(burst = T)
 # 
 #   nomissing_wb %>% 
-#   dplyr::filter(GNIS_ID == "1008755")   %>% 
+#   filter(GNIS_ID == "1008755")   %>% 
 #       union_polygons("GNIS_ID") %>% 
 #   .$geometry %>%
 #   plot()
@@ -434,20 +401,20 @@ In a single step we will:
 out = 
   nomissing_wb %>% 
   hydrofab::union_polygons("GNIS_ID") %>%
-  dplyr::left_join(
-    sf::st_drop_geometry(nomissing_wb), 
+  left_join(
+    st_drop_geometry(nomissing_wb), 
     by = "GNIS_ID"
     ) %>%
   
-  dplyr::group_by(GNIS_ID) %>%
-  dplyr::mutate(
+  group_by(GNIS_ID) %>%
+  mutate(
     member_comid = paste(COMID, collapse = ",")
     ) %>%
-  dplyr::slice_max(area_sqkm) %>%
-  dplyr::ungroup() %>%
-  dplyr::bind_rows(missing_wb) %>%
-  dplyr::select(GNIS_ID, GNIS_NAME, COMID, FTYPE, member_comid) %>%
-  dplyr::mutate(
+  slice_max(area_sqkm) %>%
+  ungroup() %>%
+  bind_rows(missing_wb) %>%
+  select(GNIS_ID, GNIS_NAME, COMID, FTYPE, member_comid) %>%
+  mutate(
     area_sqkm = hydrofab::add_areasqkm(.)
     )
 
@@ -455,7 +422,7 @@ out
 ```
 
 ```{r, eval=FALSE, echo=FALSE}
-table(sf::st_geometry_type(out))
+table(st_geometry_type(out))
 ```
 <br>
 
@@ -464,11 +431,11 @@ We went from 1606 waterbody geometries to 1601 waterbody geometries. 5 COMIDs in
 ```{r, eval = FALSE, echo = FALSE}
 out2 <- 
   out %>% 
-  dplyr::group_by(GNIS_ID) %>% 
-  dplyr::arrange(-area_sqkm, .by_group = T) %>% 
-  dplyr::mutate(
+  group_by(GNIS_ID) %>% 
+  arrange(-area_sqkm, .by_group = T) %>% 
+  mutate(
     n          = 1:n(),
-    poly_count = dplyr::case_when(
+    poly_count = case_when(
       is.na(GNIS_ID) ~ "Primary",
       n == 1 ~ "Primary",
       n != 1 & !is.na(GNIS_ID) ~ "Secondary"
@@ -476,24 +443,24 @@ out2 <-
   ) 
 
 out_plot <- 
-  ggplot2::ggplot() +
+  ggplot() +
 # replace sf layers with their `_inset` versions
-  ggmapinset::geom_sf_inset(data = sf::st_transform(out2, 4326), ggplot2::aes(fill = poly_count ) ) +
-  ggplot2::labs(
+  geom_sf_inset(data = st_transform(out2, 4326), aes(fill = poly_count ) ) +
+  labs(
     # title = "VPU 06 Waterbodies",
     # subtitle = 'Single geometry for every GNIS ID',
     fill  = "Polygon"
   ) +
   # add the inset frame (the two circles with the connecting lines)
-  ggmapinset::geom_inset_frame() +  
-  ggmapinset::coord_sf_inset(inset = ggmapinset::configure_inset(centre = pt,
+  geom_inset_frame() +  
+  coord_sf_inset(inset = configure_inset(centre = pt,
                                          scale = 18,  
                                          translation = c(240, -80), 
                                          radius = 7)) + 
   thm + 
-  ggplot2::guides(fill = ggplot2::guide_legend(byrow = TRUE))
+  guides(fill = guide_legend(byrow = TRUE))
 
-ggplot2::ggsave(
+ggsave(
   plot = out_plot,
   filename = "../man/figures/output_wb.png",
   height = 6,

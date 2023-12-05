@@ -251,17 +251,20 @@ for(i in 1:length(fl_paths)){
     # Replace the geometry in 'nhd' with the corrected geometries
     st_geometry(nhd)[check] <- do.call(c, new_geom[!error_index])
   
-    logger::log_info("Saving VPU ", which_VPU, " flowlines to:\n--> {outfile}")
-      
     # Filter nhd on COMIDs in new_atts and save out result to output file
+    logger::log_info("Saving VPU ", which_VPU, " flowlines to:\n--> {outfile}")
+    
     nhd %>% 
       filter(COMID %in% new_atts$comid) %>%
-      select(-override_tocomid) %>%
+      select(-override_tocomid)  %>%
       write_sf(outfile, "flowlines")
+    
+  
   }
 
   logger::log_info("Finished VPU ", which_VPU, " flowlines")
 }
+
 
 ## ---- test view the updated flow directions  ----
 ## RUN AFTER THE BELOW CODE has been run in the script above
